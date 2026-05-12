@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { Calendar, Cpu, PieChart } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { CustomSelect } from '@/components/ui/custom-select';
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -25,12 +26,13 @@ interface AnalyticsChartsProps {
 }
 
 
-const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
+const AnalyticsCharts: React.FC<AnalyticsChartsProps & { headerContent?: React.ReactNode }> = ({
     userId,
     showSkillDropdown = true,
     initialData,
     skillsData,
-    preventFetch = false
+    preventFetch = false,
+    headerContent
 }) => {
     const [filter, setFilter] = useState('1m');
     const [selectedSkill, setSelectedSkill] = useState('');
@@ -70,10 +72,29 @@ const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
     const chartData = React.useMemo(() => {
         if (initialData) return initialData;
         if (chartDataRaw) {
-            return chartDataRaw.map((item: any) => ({
-                period: item.period || item.EvaluationCycle?.cycle_name || 'Cycle',
-                score: parseFloat(item.score || item.total_score || 0)
-            }));
+            return chartDataRaw.map((item: any) => {
+                let displayPeriod = item.period || item.EvaluationCycle?.cycle_name || 'Cycle';
+                
+                // If backend provided a date, format it for the X-axis
+                if (item.date) {
+                    try {
+                        const dateObj = new Date(item.date);
+                        displayPeriod = new Intl.DateTimeFormat('en-US', { 
+                            month: 'short', 
+                            day: '2-digit',
+                            year: '2-digit'
+                        }).format(dateObj);
+                    } catch (e) {
+                        console.error("Date formatting failed", e);
+                    }
+                }
+
+                return {
+                    period: displayPeriod,
+                    fullCycleName: item.period || item.EvaluationCycle?.cycle_name,
+                    score: parseFloat(item.score || item.total_score || 0)
+                };
+            });
         }
         return [];
     }, [initialData, chartDataRaw]);
@@ -84,51 +105,49 @@ const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
         <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="mt-4"
+            className="w-full"
         >
-            <div className="flex flex-wrap justify-between items-center mb-10 gap-6">
-                <div className="flex items-center gap-4">
-                    <div className="chai-gradient p-3 rounded-2xl text-white shadow-xl shadow-primary/20">
-                        <PieChart size={24} />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-black tracking-tight text-foreground">Performance Analytics</h2>
-                        <p className="text-sm text-muted-foreground font-bold uppercase tracking-wider">Live telemetry</p>
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex flex-wrap md:flex-nowrap justify-between items-start md:items-center mb-6 sm:mb-8 gap-4 md:gap-6 w-full">
+                {headerContent && <div className="w-full md:w-auto flex-shrink-0 flex-grow-0">{headerContent}</div>}
+                
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4 w-full md:w-auto justify-start md:justify-end mt-2 md:mt-0 pt-4 md:pt-0 border-t border-white/5 md:border-t-0">
                     {showSkillDropdown && (
-                        <select
-                            value={selectedSkill}
-                            onChange={(e) => setSelectedSkill(e.target.value)}
-                            className="bg-white/5 border border-white/10 dark:bg-black/20 rounded-2xl h-14 px-4 font-bold outline-none focus:ring-2 focus:ring-primary/50 transition-all min-w-[200px]"
-                        >
-                            <option value="">Aggregate View</option>
-                            {skills.map((s: any) => (
-                                <option key={s._id || s.id} value={s._id || s.id}>{s.name}</option>
-                            ))}
-                        </select>
+                        <div className="w-full sm:w-64 md:w-56 lg:w-64">
+                            <CustomSelect
+                                value={selectedSkill}
+                                onChange={setSelectedSkill}
+                                options={[
+                                    { value: '', label: 'Overall Performance' },
+                                    ...skills.map((s: any) => ({
+                                        value: (s._id || s.id).toString(),
+                                        label: s.name
+                                    }))
+                                ]}
+                                className="w-full"
+                                selectClassName="h-10 sm:h-12 rounded-xl bg-primary/5 border-primary/10"
+                            />
+                        </div>
                     )}
 
-                    <div className="relative group">
-                        <Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground z-10 transition-colors group-focus-within:text-primary" />
-                        <select
+                    <div className="w-full sm:w-32 md:w-40">
+                        <CustomSelect
                             value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
-                            className="bg-white/5 border border-white/10 dark:bg-black/20 rounded-2xl h-14 pl-12 pr-4 font-black outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                        >
-                            <option value="1w">1W</option>
-                            <option value="1m">1M</option>
-                            <option value="3m">3M</option>
-                            <option value="6m">6M</option>
-                            <option value="all">All</option>
-                        </select>
+                            onChange={setFilter}
+                            options={[
+                                { value: '1m', label: '1M' },
+                                { value: '3m', label: '3M' },
+                                { value: '6m', label: '6M' },
+                                { value: 'all', label: 'All' }
+                            ]}
+                            icon={<Calendar size={14} />}
+                            className="w-full"
+                            selectClassName="h-10 sm:h-12 rounded-xl bg-primary/5 border-primary/10"
+                        />
                     </div>
                 </div>
             </div>
 
-            <div className="h-[400px] w-full relative bg-white/5 dark:bg-black/10 rounded-[2.5rem] p-8 border border-white/10 shadow-inner group">
+            <div className="h-[260px] sm:h-[300px] md:h-[340px] w-full relative bg-white/5 dark:bg-black/10 rounded-[1.5rem] p-3 sm:p-6 border border-white/10 shadow-inner group">
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-full gap-4">
                         <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -162,16 +181,28 @@ const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                                 tick={{ fontWeight: 800 }}
                             />
                             <Tooltip
-                                contentStyle={{
-                                    background: 'hsla(var(--background), 0.8)',
-                                    backdropFilter: 'blur(16px)',
-                                    border: '1px solid hsla(var(--foreground), 0.1)',
-                                    borderRadius: '1.25rem',
-                                    padding: '1rem',
-                                    boxShadow: '0 20px 40px -10px rgba(0,0,0,0.2)',
-                                    fontWeight: 900
+                                content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                        const data = payload[0].payload;
+                                        return (
+                                            <div className="p-4 rounded-[1.25rem] bg-black/90 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[140px]">
+                                                <div className="flex flex-col gap-0.5 mb-2">
+                                                    <p className="text-[9px] font-black uppercase text-amber-500 tracking-[0.2em]">
+                                                        {data.fullCycleName}
+                                                    </p>
+                                                    <p className="text-sm font-black text-white">
+                                                        {data.period}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Score</span>
+                                                    <span className="text-base font-black text-amber-500">{data.score}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
                                 }}
-                                itemStyle={{ color: 'hsl(var(--primary))' }}
                                 cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2, strokeDasharray: '5 5' }}
                             />
                             <Area
@@ -187,13 +218,13 @@ const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                         </AreaChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full gap-6 opacity-40">
+                    <div className="flex flex-col items-center justify-center h-full gap-0 opacity-40">
                         <div className="p-8 bg-white/5 rounded-full border border-white/5">
                             <Cpu size={64} className="text-muted-foreground" />
                         </div>
                         <div className="text-center">
-                            <div className="text-xl font-black text-foreground mb-1">Baseline Undetected</div>
-                            <p className="text-sm font-bold text-muted-foreground">No data points captured for this period.</p>
+                            <div className="text-xl font-black text-foreground mb-1">No Data Available</div>
+                            {/*<p className="text-sm font-bold text-muted-foreground">Please select a user to view the chart.</p>*/}
                         </div>
                     </div>
                 )}

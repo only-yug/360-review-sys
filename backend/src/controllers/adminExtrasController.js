@@ -59,11 +59,11 @@ exports.createTransferRequest = catchAsync(async (req, res, next) => {
 
 exports.getAllRequests = catchAsync(async (req, res, next) => {
     const whereClause = {};
-    const { status } = req.query;
-
+    const { status, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
 
     if (status) {
-        whereClause.status = status;
+        whereClause.status = status.toLowerCase();
     }
 
     // If manager, only show requests targeted to them
@@ -72,8 +72,10 @@ exports.getAllRequests = catchAsync(async (req, res, next) => {
         whereClause.target_manager_id = req.user.id;
     }
 
-    const requests = await TeamChangeRequest.findAll({
+    const { count, rows: requests } = await TeamChangeRequest.findAndCountAll({
         where: whereClause,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
         include: [
             { model: User, as: 'employee', attributes: ['id', 'full_name', 'email'] },
             { model: User, as: 'currentManager', attributes: ['id', 'full_name'] },
@@ -81,26 +83,40 @@ exports.getAllRequests = catchAsync(async (req, res, next) => {
         ],
         order: [['created_at', 'DESC']]
     });
-    res.status(200).json({ status: 'success', data: { requests } });
+
+    res.status(200).json({ 
+        status: 'success', 
+        pagination: {
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / limit)
+        },
+        data: { requests } 
+    });
 });
 
 exports.getMyRequests = catchAsync(async (req, res, next) => {
     const { Op } = require('sequelize');
+    const { status, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
     const userId = req.user.id;
 
-    // User sees:
-    // 1. Requests they created (employee_id)
-    // 2. Requests sent TO them (target_manager_id)
-    // 3. Requests sent FROM them? (current_manager_id - notifications maybe?)
+    const whereClause = {
+        [Op.or]: [
+            { employee_id: userId },
+            { target_manager_id: userId }
+        ]
+    };
 
-    // Simplest: Requests where I am the employee OR the target manager
-    const requests = await TeamChangeRequest.findAll({
-        where: {
-            [Op.or]: [
-                { employee_id: userId },
-                { target_manager_id: userId }
-            ]
-        },
+    if (status) {
+        whereClause.status = status.toLowerCase();
+    }
+
+    const { count, rows: requests } = await TeamChangeRequest.findAndCountAll({
+        where: whereClause,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
         include: [
             { model: User, as: 'employee', attributes: ['id', 'full_name', 'email'] },
             { model: User, as: 'currentManager', attributes: ['id', 'full_name'] },
@@ -109,7 +125,16 @@ exports.getMyRequests = catchAsync(async (req, res, next) => {
         order: [['created_at', 'DESC']]
     });
 
-    res.status(200).json({ status: 'success', data: { requests } });
+    res.status(200).json({ 
+        status: 'success', 
+        pagination: {
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / limit)
+        },
+        data: { requests } 
+    });
 });
 
 exports.updateRequestStatus = catchAsync(async (req, res, next) => {
@@ -143,13 +168,15 @@ exports.updateRequestStatus = catchAsync(async (req, res, next) => {
         }
 
         if (status === 'approved') {
-            // 1. Deactivate old reporting line (ONLY IF TRANSFER)
-            if (request.request_type === 'transfer') {
+            // 1. For TRANSFER: deactivate ONLY the specific manager being replaced.
+            //    For JOIN_ADDITIONAL: keep all existing lines — just add a new one.
+            if (request.request_type === 'transfer' && request.current_manager_id) {
                 await ReportingLine.update(
                     { is_active: false, deleted_at: new Date() },
                     {
                         where: {
                             employee_id: request.employee_id,
+                            manager_id: request.current_manager_id,
                             is_active: true
                         },
                         transaction: t
@@ -157,11 +184,10 @@ exports.updateRequestStatus = catchAsync(async (req, res, next) => {
                 );
             }
 
-            // 2. Create new reporting line
+            // 2. Create the new reporting line (no relationship_type — flat many-to-many)
             await ReportingLine.create({
                 employee_id: request.employee_id,
                 manager_id: request.target_manager_id,
-                relationship_type: request.request_type === 'transfer' ? 'Primary' : 'Secondary',
                 is_active: true
             }, { transaction: t });
         }

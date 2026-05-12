@@ -6,6 +6,7 @@ import { Download, LayoutGrid, Users, ChevronDown, ArrowLeft } from 'lucide-reac
 import Link from 'next/link';
 import { Cycle } from '@/types/adminDashboard';
 import { cn } from '@/lib/utils';
+import { CustomSelect } from '@/components/ui/custom-select';
 
 interface DashboardShellProps {
     children: React.ReactNode;
@@ -17,6 +18,12 @@ interface DashboardShellProps {
 }
 
 export const DashboardShell: React.FC<DashboardShellProps> = ({ children, viewMode, onViewModeChange, cycleId, onCycleChange, cycles }) => {
+    // Map cycles to options for CustomSelect
+    const cycleOptions = cycles.map(cycle => ({
+        value: cycle.id,
+        label: cycle.label
+    }));
+
     return (
         <div className="h-screen w-full flex flex-col bg-background text-foreground dark:bg-zinc-950 dark:text-zinc-100 overflow-hidden font-sans relative selection:bg-indigo-500/30">
             {/* Background Gradient Mesh */}
@@ -43,19 +50,15 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({ children, viewMo
                     <div className="h-8 w-px bg-border dark:bg-white/10 mx-2" />
 
                     {/* Cycle Selector */}
-                    <div className="relative group">
-                        <select
-                            className="w-[240px] h-10 pl-4 pr-10 text-sm bg-muted/50 dark:bg-zinc-900/50 border border-border dark:border-white/10 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all hover:bg-muted dark:hover:bg-zinc-900/80 text-foreground dark:text-zinc-300 font-medium"
+                    <div className="w-[300px]">
+                        <CustomSelect
                             value={cycleId}
-                            onChange={(e) => onCycleChange(e.target.value)}
-                        >
-                            {cycles.map(cycle => (
-                                <option key={cycle.id} value={cycle.id} className="bg-background dark:bg-zinc-900 text-foreground dark:text-zinc-300">
-                                    {cycle.label}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-muted-foreground dark:text-zinc-500 pointer-events-none group-hover:text-foreground dark:group-hover:text-zinc-300 transition-colors" />
+                            onChange={(val) => onCycleChange(val)}
+                            options={cycleOptions}
+                            placeholder="Select cycle..."
+                            className="w-full"
+                            selectClassName="h-10 bg-muted/50 dark:bg-zinc-900/50 border-border dark:border-white/10 hover:bg-muted dark:hover:bg-zinc-900/80 rounded-xl"
+                        />
                     </div>
                 </div>
 

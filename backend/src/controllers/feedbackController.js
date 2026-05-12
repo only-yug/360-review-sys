@@ -3,14 +3,18 @@ const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
 
 const getMyPendingReviews = catchAsync(async (req, res, next) => {
-  const { status } = req.query;
+  const { status, page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
   const where = {
     reviewer_id: req.user.id,
     status: status || 'pending'
   };
 
-  const reviews = await Review.findAll({
+  const { count, rows: reviews } = await Review.findAndCountAll({
     where,
+    limit: parseInt(limit),
+    offset: parseInt(offset),
     include: [
       {
         model: User,
@@ -27,6 +31,12 @@ const getMyPendingReviews = catchAsync(async (req, res, next) => {
 
   res.json({
     success: true,
+    pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+    },
     data: { feedbackRequests: reviews }
   });
 });
@@ -302,11 +312,16 @@ const submitReview = catchAsync(async (req, res, next) => {
 });
 
 const getMyFeedback = catchAsync(async (req, res, next) => {
-  const reviews = await Review.findAll({
+  const { page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const { count, rows: reviews } = await Review.findAndCountAll({
     where: {
       reviewee_id: req.user.id,
       status: 'completed'
     },
+    limit: parseInt(limit),
+    offset: parseInt(offset),
     include: [
       {
         model: User,
@@ -334,15 +349,64 @@ const getMyFeedback = catchAsync(async (req, res, next) => {
     order: [['updated_at', 'DESC']]
   });
 
-
-
   res.json({
     success: true,
+    pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+    },
     data: { feedbackRequests: reviews }
   });
 });
 
 const getReviewStatus = catchAsync(async (req, res, next) => {
+  const { cycle_id, status, page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+  const reviewerId = req.user.id;
+
+  const where = {
+    reviewer_id: reviewerId
+  };
+
+  if (cycle_id) {
+    where.cycle_id = cycle_id;
+  }
+  
+  if (status) {
+    where.status = status;
+  }
+
+  const { count, rows: reviews } = await Review.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset: parseInt(offset),
+    include: [
+      {
+        model: User,
+        as: 'reviewee',
+        attributes: ['id', 'full_name', 'email', 'role']
+      }
+    ],
+    order: [['created_at', 'DESC']]
+  });
+
+  res.status(200).json({
+    success: true,
+    pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+    },
+    data: {
+      reviews
+    }
+  });
+});
+
+const getReviewStats = catchAsync(async (req, res, next) => {
   const { cycle_id } = req.query;
   const reviewerId = req.user.id;
 
@@ -354,26 +418,19 @@ const getReviewStatus = catchAsync(async (req, res, next) => {
     where.cycle_id = cycle_id;
   }
 
-  const reviews = await Review.findAll({
-    where,
-    include: [
-      {
-        model: User,
-        as: 'reviewee',
-        attributes: ['id', 'full_name', 'email', 'role']
-      }
-    ],
-    order: [['created_at', 'DESC']]
+  const pendingCount = await Review.count({
+    where: { ...where, status: 'pending' }
   });
 
-  const pending = reviews.filter(r => r.status === 'pending');
-  const completed = reviews.filter(r => r.status === 'completed');
+  const completedCount = await Review.count({
+    where: { ...where, status: 'completed' }
+  });
 
   res.status(200).json({
     success: true,
     data: {
-      pending,
-      completed
+      pending: pendingCount,
+      completed: completedCount
     }
   });
 });
@@ -383,5 +440,6 @@ module.exports = {
   getReviewInterface,
   submitReview,
   getMyFeedback,
-  getReviewStatus
+  getReviewStatus,
+  getReviewStats
 };

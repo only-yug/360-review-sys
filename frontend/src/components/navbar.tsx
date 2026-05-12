@@ -6,14 +6,20 @@ import { useAuth } from '@/lib/auth-context';
 import { BarChart3, LogOut, User as UserIcon, Mail, Shield, ChevronDown, Activity } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 
 export function Navbar() {
     const { user, logout } = useAuth();
     const router = useRouter();
+    const pathname = usePathname();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown on navigation or user change
+    useEffect(() => {
+        setIsProfileOpen(false);
+    }, [pathname, user?.id]);
 
     const handleLogout = () => {
         logout();
@@ -35,7 +41,7 @@ export function Navbar() {
         <nav className="fixed top-0 left-0 right-0 z-50 glass-card border-b border-gray-200 dark:border-white/10 h-20 transition-all duration-300">
             <div className="container mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
                 {/* Branding */}
-                <Link href="/" className="flex items-center gap-2 sm:gap-3 group transition-all hover:scale-[1.02] active:scale-[0.98]">
+                <Link href={user ? `/dashboard/${user.role}` : '/'} className="flex items-center gap-2 sm:gap-3 group transition-all hover:scale-[1.02] active:scale-[0.98]">
                     <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/30 text-white transform group-hover:rotate-6 transition-transform">
                         <BarChart3 size={24} />
                     </div>
@@ -90,7 +96,7 @@ export function Navbar() {
                                             </div>
                                             <div className="flex flex-col">
                                                 <p className="font-black text-foreground text-lg leading-tight tracking-tight">{user.full_name}</p>
-                                                <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5 mt-0.5">
+                                                <p className="text-sm text-muted-foreground font-semibold flex items-center gap-1.5 mt-0.5">
                                                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                                                     {user.role}
                                                 </p>
@@ -100,12 +106,12 @@ export function Navbar() {
                                         <div className="space-y-3">
                                             <div className="flex items-center gap-3 p-2 rounded-xl bg-gray-100 dark:bg-white/5 text-muted-foreground hover:text-foreground transition-colors group">
                                                 <Mail size={16} className="text-primary/60 group-hover:text-primary transition-colors" />
-                                                <span className="text-xs font-bold truncate tracking-tight">{user.email}</span>
+                                                <span className="text-sm font-bold truncate tracking-tight">{user.email}</span>
                                             </div>
-                                            <div className="flex items-center gap-3 p-2 rounded-xl bg-gray-100 dark:bg-white/5 text-muted-foreground hover:text-foreground transition-colors group">
-                                                <Shield size={16} className="text-primary/60 group-hover:text-primary transition-colors" />
-                                                <span className="text-xs font-bold uppercase tracking-wider">{user.role} Authorization</span>
-                                            </div>
+                                            {/*<div className="flex items-center gap-3 p-2 rounded-xl bg-gray-100 dark:bg-white/5 text-muted-foreground hover:text-foreground transition-colors group">*/}
+                                            {/*    <Shield size={16} className="text-primary/60 group-hover:text-primary transition-colors" />*/}
+                                            {/*    <span className="text-xs font-bold uppercase tracking-wider">{user.role} Authorization</span>*/}
+                                            {/*</div>*/}
                                         </div>
                                     </div>
 
@@ -128,9 +134,7 @@ export function Navbar() {
                             <Link href="/login">
                                 <Button variant="ghost" className="rounded-2xl font-bold hover:bg-primary/10 transition-colors">Login</Button>
                             </Link>
-                            <Link href="/register">
-                                <Button className="rounded-2xl font-bold chai-gradient shadow-lg shadow-primary/30 text-white border-0 hover:shadow-primary/50 transition-all">Get Started</Button>
-                            </Link>
+
                         </div>
                     )}
                 </div>

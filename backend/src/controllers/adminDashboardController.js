@@ -49,11 +49,13 @@ const recalculateUserSkillScore = async (userId, skillId, cycleId, transaction) 
                 model: sequelize.models.QuestionVersion,
                 as: 'questionVersion',
                 required: true,
+                paranoid: false,
                 include: [{
                     model: sequelize.models.Question,
                     as: 'question',
                     where: { skill_id: skillId },
-                    required: true
+                    required: true,
+                    paranoid: false
                 }]
             }],
             transaction
@@ -131,7 +133,8 @@ exports.getDashboardEmployees = catchAsync(async (req, res) => {
     const offset = (page - 1) * limit;
 
     const whereClause = {
-        role: { [Op.ne]: 'admin' }
+        // Exclude self (the current admin) so you only see other admins and users
+        id: { [Op.ne]: req.user.id }
     };
 
     if (search) {
@@ -147,7 +150,7 @@ exports.getDashboardEmployees = catchAsync(async (req, res) => {
         limit: parseInt(limit),
         offset: parseInt(offset),
         attributes: ['id', ['full_name', 'name'], 'role', 'email'],
-        order: [['full_name', 'ASC']]
+        order: [['id', 'DESC']]
     });
 
     const employeeIds = employees.map(e => e.id);
@@ -229,7 +232,6 @@ exports.getDashboardEmployees = catchAsync(async (req, res) => {
                 id: emp.id,
                 name: emp.getDataValue('name'),
                 role: emp.role,
-                department: 'N/A',
                 avatar: null,
                 stats: {
                     reviewsReceived: received,
@@ -324,7 +326,8 @@ exports.getEmployeeAudit = catchAsync(async (req, res, next) => {
             include: [{
                 model: Skill,
                 as: 'skill',
-                attributes: ['id', 'skill_name', 'category']
+                attributes: ['id', 'skill_name', 'category'],
+                paranoid: false
             }]
         }),
         ReviewAnswer.findAll({
@@ -334,10 +337,12 @@ exports.getEmployeeAudit = catchAsync(async (req, res, next) => {
                 model: sequelize.models.QuestionVersion,
                 as: 'questionVersion',
                 attributes: ['id', 'question_text', 'question_type'],
+                paranoid: false,
                 include: [{
                     model: sequelize.models.Question,
                     as: 'question',
-                    attributes: ['id', 'skill_id']
+                    attributes: ['id', 'skill_id'],
+                    paranoid: false
                 }]
             }]
         })
@@ -533,7 +538,8 @@ exports.getReviewerAudit = catchAsync(async (req, res, next) => {
             include: [{
                 model: Skill,
                 as: 'skill',
-                attributes: ['id', 'skill_name', 'category']
+                attributes: ['id', 'skill_name', 'category'],
+                paranoid: false
             }]
         }),
         ReviewAnswer.findAll({
@@ -543,10 +549,12 @@ exports.getReviewerAudit = catchAsync(async (req, res, next) => {
                 model: sequelize.models.QuestionVersion,
                 as: 'questionVersion',
                 attributes: ['id', 'question_text', 'question_type'],
+                paranoid: false,
                 include: [{
                     model: sequelize.models.Question,
                     as: 'question',
-                    attributes: ['id', 'skill_id']
+                    attributes: ['id', 'skill_id'],
+                    paranoid: false
                 }]
             }]
         })
@@ -714,10 +722,12 @@ exports.updateAnswer = catchAsync(async (req, res, next) => {
         include: [{
             model: sequelize.models.QuestionVersion,
             as: 'questionVersion',
+            paranoid: false,
             include: [{
                 model: sequelize.models.Question,
                 as: 'question',
-                attributes: ['id', 'skill_id']
+                attributes: ['id', 'skill_id'],
+                paranoid: false
             }]
         }, {
             model: Review,

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { ValidatedInput } from '@/components/ui/validated-input';
 import { Outfit } from 'next/font/google';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
@@ -85,60 +86,35 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={formik.handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-foreground/70 ml-1">Email Address</label>
-            <div className="relative group">
-              <Mail size={20} className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${formik.touched.email && formik.errors.email ? 'text-destructive' : 'text-muted-foreground group-focus-within:text-primary'}`} />
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="john@company.com"
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                value={formik.values.email}
-                className={`w-full pl-12 pr-4 py-4 rounded-2xl border bg-white/5 dark:bg-black/20 text-foreground outline-none text-base transition-all focus:ring-2 placeholder:text-muted-foreground/50 ${formik.touched.email && formik.errors.email
-                  ? 'border-destructive/50 focus:ring-destructive/20 focus:border-destructive'
-                  : 'border-white/10 focus:ring-primary/50 focus:border-primary/50'
-                  }`}
-              />
-            </div>
-            {formik.touched.email && formik.errors.email && (
-              <p className="text-destructive text-xs font-bold ml-1">{formik.errors.email}</p>
-            )}
-          </div>
+          <ValidatedInput
+            label="Email Address"
+            placeholder="john@company.com"
+            {...formik.getFieldProps('email')}
+            error={formik.touched.email ? formik.errors.email : undefined}
+            icon={<Mail size={20} />}
+          />
 
-          <div className="space-y-2">
-            <div className="flex justify-between items-center px-1">
-              <label className="text-sm font-bold text-foreground/70">Password</label>
-              <Link href="#" className="text-xs font-semibold text-primary hover:underline">Forgot password?</Link>
+          <div className="space-y-1">
+            <div className="flex justify-between items-center px-1 mb-1">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">Password</label>
+              <Link href="#" className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline">Forgot password?</Link>
             </div>
-            <div className="relative group">
-              <Lock size={20} className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${formik.touched.password && formik.errors.password ? 'text-destructive' : 'text-muted-foreground group-focus-within:text-primary'}`} />
-              <input
-                id="password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="•••••••"
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                value={formik.values.password}
-                className={`w-full pl-12 pr-12 py-4 rounded-2xl border bg-white/5 dark:bg-black/20 text-foreground outline-none text-base transition-all focus:ring-2 placeholder:text-muted-foreground/50 ${formik.touched.password && formik.errors.password
-                  ? 'border-destructive/50 focus:ring-destructive/20 focus:border-destructive'
-                  : 'border-white/10 focus:ring-primary/50 focus:border-primary/50'
-                  }`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors focus:outline-none"
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-            {formik.touched.password && formik.errors.password && (
-              <p className="text-destructive text-xs font-bold ml-1">{formik.errors.password}</p>
-            )}
+            <ValidatedInput
+              placeholder="•••••••"
+              type={showPassword ? "text" : "password"}
+              {...formik.getFieldProps('password')}
+              error={formik.touched.password ? formik.errors.password : undefined}
+              icon={<Lock size={20} />}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-muted-foreground hover:text-primary transition-colors focus:outline-none"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              }
+            />
           </div>
 
           <button
@@ -160,14 +136,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-8 text-center">
-          <p className="text-muted-foreground font-medium">
-            Don&apos;t have an account?{' '}
-            <Link href="/register" className="text-primary font-bold hover:underline underline-offset-4">
-              Sign up
-            </Link>
-          </p>
-        </div>
+
       </div>
     </div>
   );

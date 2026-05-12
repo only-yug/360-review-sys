@@ -21,27 +21,6 @@ const createSendToken = (user, statusCode, res) => {
   });
 };
 
-exports.register = catchAsync(async (req, res, next) => {
-  const { full_name, email, password } = req.body;
-
-  // Check if user exists
-  const existingUser = await User.findOne({ where: { email } });
-  if (existingUser) {
-    return next(new AppError('User already exists', 400));
-  }
-
-  const hashedPassword = await bcrypt.hash(password, 12);
-
-  const newUser = await User.create({
-    full_name,
-    email,
-    password_hash: hashedPassword,
-    role: 'employee', // Default role
-  });
-
-  createSendToken(newUser, 201, res);
-});
-
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
 

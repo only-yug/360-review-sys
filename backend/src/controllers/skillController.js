@@ -3,7 +3,22 @@ const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
 
 exports.getAllSkills = catchAsync(async (req, res, next) => {
-    const skills = await Skill.findAll({
+    const { Op } = require('sequelize');
+    const { page = 1, limit = 20, search } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = {};
+    if (search) {
+        whereClause.skill_name = {
+            [Op.iLike]: `%${search}%`
+        };
+    }
+
+    const { count, rows: skills } = await Skill.findAndCountAll({
+        where: whereClause,
+        distinct: true,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
         include: [{
             model: Question,
             as: 'questions',
@@ -12,10 +27,20 @@ exports.getAllSkills = catchAsync(async (req, res, next) => {
                 as: 'currentVersion',
                 attributes: ['id', 'question_text', 'question_type']
             }]
-        }]
+        }],
+        order: [['id', 'ASC']]
     });
 
-    res.status(200).json({ status: 'success', data: { skills } });
+    res.status(200).json({ 
+        status: 'success', 
+        pagination: {
+            total: count,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(count / limit)
+        },
+        data: { skills } 
+    });
 });
 
 exports.getSkillOptions = catchAsync(async (req, res, next) => {
@@ -34,12 +59,21 @@ exports.getSkillOptions = catchAsync(async (req, res, next) => {
 });
 
 exports.createSkill = catchAsync(async (req, res, next) => {
+    const { Op } = require('sequelize');
     const { skill_name, category, weight_employee, weight_manager } = req.body;
 
     if (!skill_name) {
         return next(new AppError('Skill name is required', 400));
     }
 
+    // Check for duplicate skill name (case-insensitive) - ignores archived skills so admin can recreate
+    const existing = await Skill.findOne({
+        where: { skill_name: { [Op.iLike]: skill_name.trim() } }
+    });
+    
+    if (existing) {
+        return next(new AppError(`A skill named "${existing.skill_name}" already exists`, 409));
+    }
 
     if (weight_employee < 0 || weight_employee > 100) {
         return next(new AppError('Weight employee must be between 0 and 100', 400));
@@ -48,7 +82,7 @@ exports.createSkill = catchAsync(async (req, res, next) => {
         return next(new AppError('Weight manager must be between 0 and 100', 400));
     }
 
-    const skill = await Skill.create({ skill_name, category, weight_employee, weight_manager });
+    const skill = await Skill.create({ skill_name: skill_name.trim(), category, weight_employee, weight_manager });
 
     res.status(201).json({ status: 'success', data: { skill } });
 });

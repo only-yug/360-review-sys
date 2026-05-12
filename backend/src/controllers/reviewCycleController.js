@@ -4,7 +4,52 @@ const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
 
 exports.getAllCycles = catchAsync(async (req, res, next) => {
+  const { status, page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const whereClause = {};
+  let paranoid = true;
+  const today = new Date();
+
+  if (status) {
+    const s = status.toLowerCase();
+    if (s === 'active') {
+      whereClause.is_active = true;
+    } else if (s === 'pending') {
+      whereClause.is_active = false;
+      whereClause.start_date = { [Op.gt]: today };
+    } else if (s === 'closed') {
+      whereClause.is_active = false;
+      whereClause.end_date = { [Op.lt]: today };
+    } else if (s === 'deleted') {
+      paranoid = false;
+      whereClause.deleted_at = { [Op.ne]: null };
+    }
+  }
+
+  const { count, rows: cycles } = await EvaluationCycle.findAndCountAll({
+    where: whereClause,
+    limit: parseInt(limit),
+    offset: parseInt(offset),
+    order: [['created_at', 'DESC']],
+    paranoid: paranoid
+  });
+
+  res.status(200).json({ 
+    status: 'success', 
+    pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / limit)
+    },
+    data: { cycles } 
+  });
+});
+
+exports.getMinimalCycles = catchAsync(async (req, res, next) => {
   const cycles = await EvaluationCycle.findAll({
+    attributes: ['id', 'cycle_name'],
     order: [['created_at', 'DESC']]
   });
 

@@ -10,7 +10,7 @@ export type Employee = {
     id: string;
     name: string;
     role: string;
-    department: string;
+    department?: string;
     avatar?: string;
     stats?: {
         reviewsReceived: number;

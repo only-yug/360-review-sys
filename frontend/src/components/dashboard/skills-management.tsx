@@ -4,6 +4,8 @@ import { Plus, Edit2, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface SkillsManagementProps {
     skills: any[];
+    pagination?: any;
+    onPageChange?: (page: number) => void;
     onAddSkill: () => void;
     onEditSkill: (skill: any) => void;
     onDeleteSkill: (id: string, name: string) => void;
@@ -14,6 +16,8 @@ interface SkillsManagementProps {
 
 export default function SkillsManagement({
                                              skills,
+                                             pagination,
+                                             onPageChange,
                                              onAddSkill,
                                              onEditSkill,
                                              onDeleteSkill,
@@ -25,12 +29,12 @@ export default function SkillsManagement({
 
     return (
         <motion.div key="skills" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="glass-card p-4 sm:p-8 rounded-3xl border-white/10 shadow-2xl">
+            <div className="glass-card p-2 sm:p-8 rounded-3xl border-white/10 shadow-2xl">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                     <div>
                         <h3 className="text-3xl font-black tracking-tight uppercase">Skills & Questions</h3>
-                        <p className="text-muted-foreground text-xs font-bold tracking-wide mt-1">Manage evaluation criteria and associated questions</p>
+                        {/*<p className="text-muted-foreground text-sm font-bold tracking-wide mt-1">Manage evaluation criteria and associated questions</p>*/}
                     </div>
                     <button
                         onClick={onAddSkill}
@@ -46,21 +50,21 @@ export default function SkillsManagement({
                         <div key={s._id || s.id} className="bg-white/5 border border-white/5 rounded-3xl overflow-hidden transition-all hover:bg-white/[0.07]">
                             {/* Skill Header */}
                             <div
-                                className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
+                                className="p-3 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
                                 onClick={() => setExpandedSkill(expandedSkill === (s._id || s.id) ? null : (s._id || s.id))}
                             >
                                 <div className="space-y-2 w-full sm:w-auto">
                                     <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                         <h4 className="font-black text-xl tracking-tight">{s.name}</h4>
                                         {s.category && (
-                                            <span className="px-2 py-0.5 bg-white/10 rounded-lg text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                                            <span className="px-2 py-0.5 bg-white/10 rounded-lg text-xs font-black uppercase tracking-widest text-muted-foreground">
                                                 {s.category}
                                             </span>
                                         )}
                                     </div>
-                                    <div className="flex flex-wrap gap-3 sm:gap-4 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                        <span className="text-primary/70">Emp Factor: {s.employee_weight}</span>
-                                        <span className="text-orange-400/70">Mgr Factor: {s.manager_weight}</span>
+                                    <div className="flex flex-wrap gap-3 sm:gap-4 text-xs font-black text-muted-foreground">
+                                        <span className="text-primary/70">Employee Weight: {s.employee_weight}</span>
+                                        <span className="text-orange-400/70">Manager Weight: {s.manager_weight}</span>
                                     </div>
                                 </div>
 
@@ -68,7 +72,7 @@ export default function SkillsManagement({
                                     <div className="flex gap-2">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onEditSkill(s); }}
-                                            className="p-2.5 bg-white/5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/10 transition-all"
+                                            className="p-2.5 bg-primary/10 rounded-xl text-primary border border-primary/20 hover:bg-primary hover:text-white transition-all"
                                         >
                                             <Edit2 size={18} />
                                         </button>
@@ -90,11 +94,11 @@ export default function SkillsManagement({
                                         initial={{ height: 0, opacity: 0 }}
                                         animate={{ height: 'auto', opacity: 1 }}
                                         exit={{ height: 0, opacity: 0 }}
-                                        className="border-t border-white/5 bg-black/20"
+                                        className="border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-black/20"
                                     >
-                                        <div className="p-4 sm:p-6 sm:pl-10">
+                                        <div className="p-2 sm:p-6 sm:pl-10">
                                             <div className="flex justify-between items-center mb-6">
-                                                <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Associated Questions</h5>
+                                                <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Assigned Questions</h5>
                                                 { /* Add Question button text shortened on mobile or flexible? */}
                                                 <button
                                                     onClick={() => onAddQuestion(s._id || s.id)}
@@ -105,30 +109,28 @@ export default function SkillsManagement({
                                             </div>
 
                                             {(!s.questions || s.questions.length === 0) ? (
-                                                <div className="p-8 text-center border-2 border-dashed border-white/5 rounded-3xl opacity-40">
-                                                    <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">No questions mapped to this vector</p>
+                                                <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-3xl opacity-40">
+                                                    <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Questions not found</p>
                                                 </div>
                                             ) : (
                                                 <div className="space-y-4">
                                                     {s.questions.map((q: any) => (
-                                                        <div key={q._id || q.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-6 bg-white/5 rounded-3xl border border-white/5 group hover:border-white/10 transition-all gap-4">
-                                                            <div className="flex items-start sm:items-center gap-4 sm:gap-6">
-                                                                <span className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${q.type === 'Boolean' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'
-                                                                }`}>
-                                                                    {q.type === 'Rating' ? 'Scale' : 'Bool'}
-                                                                </span>
-                                                                <p className="font-bold text-sm text-foreground/90 leading-relaxed">{q.text}</p>
-                                                            </div>
-                                                            <div className="flex gap-2 self-end sm:self-auto sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                        <div key={q._id || q.id} className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] items-center p-3 sm:p-6 bg-white dark:bg-white/5 rounded-3xl border border-slate-200 dark:border-white/5 group hover:border-slate-300 dark:hover:border-white/10 transition-all gap-3 sm:gap-6 shadow-sm hover:shadow-md">
+                                                            <span className={`order-1 shrink-0 w-max px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest ${q.type === 'Boolean' ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-500 border border-purple-200 dark:border-purple-500/20' : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500 border border-blue-200 dark:border-blue-500/20'
+                                                            }`}>
+                                                                {q.type === 'Rating' ? 'Scale' : 'Bool'}
+                                                            </span>
+                                                            <p className="order-3 sm:order-2 col-span-2 sm:col-span-1 font-bold text-sm text-foreground/90 leading-relaxed">{q.text}</p>
+                                                            <div className="order-2 sm:order-3 justify-self-end flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                                 <button
                                                                     onClick={() => onEditQuestion(q, s._id || s.id)}
-                                                                    className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-muted-foreground hover:text-foreground transition-all"
+                                                                    className="p-2.5 bg-primary/10 rounded-xl text-primary border border-primary/20 hover:bg-primary hover:text-white transition-all"
                                                                 >
                                                                     <Edit2 size={16} />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => onDeleteQuestion(q._id || q.id, q.text)}
-                                                                    className="p-2.5 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-red-500/60 hover:text-red-500 transition-all"
+                                                                    className="p-2.5 bg-red-50 hover:bg-red-100 dark:bg-red-500/5 dark:hover:bg-red-500/10 rounded-xl text-red-500/60 hover:text-red-500 transition-all"
                                                                 >
                                                                     <Trash2 size={16} />
                                                                 </button>
@@ -144,6 +146,31 @@ export default function SkillsManagement({
                         </div>
                     ))}
                 </div>
+
+                {/* Pagination Controls */}
+                {pagination && pagination.totalPages > 1 && (
+                    <div className="mt-8 flex items-center justify-between border-t border-white/5 pt-6">
+                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                            Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
+                        </div>
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => onPageChange && onPageChange(Math.max(1, pagination.page - 1))}
+                                disabled={pagination.page <= 1}
+                                className="px-4 py-2 rounded-xl bg-white/5 text-white text-xs font-black uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-all border border-white/10"
+                            >
+                                Prev
+                            </button>
+                            <button 
+                                onClick={() => onPageChange && onPageChange(Math.min(pagination.totalPages, pagination.page + 1))}
+                                disabled={pagination.page >= pagination.totalPages}
+                                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/20 disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-primary/40 transition-all active:scale-95"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </motion.div>
     );

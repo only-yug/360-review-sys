@@ -11,19 +11,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api';
+import { useAlert } from '@/lib/alert-context';
 import DashboardOverview from '@/components/dashboard/dashboard-overview';
 import UsersList from '@/components/dashboard/users-list';
 import ReviewSystem from '@/components/dashboard/review-system';
 import TeamRequests from '@/components/dashboard/team-requests';
 import { useQuery, useQueryClient } from '@tanstack/react-query'; // [NEW]
 import DashboardShell from '@/components/dashboard/dashboard-shell';
+import ScreenLoader from '@/components/ui/screen-loader';
 
 export default function ManagerDashboardPage() {
     const { user, loading: authLoading } = useAuth();
     const router = useRouter();
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState('Overview');
+    const [selectedUserId, setSelectedUserId] = useState<string>('');
     const [requestFilter, setRequestFilter] = useState('Pending');
+    const [teamPage, setTeamPage] = useState(1);
+    const [requestsPage, setRequestsPage] = useState(1);
+    const [directoryPage, setDirectoryPage] = useState(1);
+    const limit = 10;
 
     // UI State for Reviews
     const [reviewView, setReviewView] = useState<'cycles' | 'users' | 'assessment'>('cycles');
@@ -35,8 +42,7 @@ export default function ManagerDashboardPage() {
     const [pendingReviews, setPendingReviews] = useState<any[]>([]);
 
     // UI State for Modals
-    const [skipModal, setSkipModal] = useState<{ show: boolean; questionId: string | null }>({ show: false, questionId: null });
-    const [warningModal, setWarningModal] = useState<{ show: boolean; message: string }>({ show: false, message: '' });
+    const { showAlert, showConfirm } = useAlert();
     const [skipError, setSkipError] = useState(false);
     const [validationConfig, setValidationConfig] = useState<any>(null);
     const [cycleFilter, setCycleFilter] = useState('Active');
@@ -46,34 +52,64 @@ export default function ManagerDashboardPage() {
     // REACT QUERY: DATA FETCHING
     // =========================================================================
 
-    // 1. Fetch My Team
+    // 0. Dashboard Summary — Lightweight counts for stat cards (fires immediately)
+    const { data: summaryData, isLoading: summaryLoading } = useQuery({
+        queryKey: ['dashboardSummary', 'manager', 'employee'], // Added employee dependency
+        queryFn: async () => {
+            const [mRes, eRes] = await Promise.all([
+                apiClient.get('/admin/dashboard/summary', { params: { role: 'manager' } }),
+                apiClient.get('/admin/dashboard/summary', { params: { role: 'employee' } })
+            ]);
+            return {
+                ...mRes.data.data,
+                totalWorkforce: eRes.data.data.totalWorkforce
+            };
+        },
+        enabled: !!user,
+        staleTime: 30_000
+    });
+
+    // 1. Fetch My Team (paginated) — For My Team tab table view
     const { data: teamData, isLoading: teamLoading } = useQuery({
-        queryKey: ['myTeam'],
+        queryKey: ['myTeam', teamPage, limit],
         queryFn: async () => {
-            const res = await apiClient.get('/users/me/team');
-            return res.data.data.team || [];
+            const res = await apiClient.get(`/users/me/team?page=${teamPage}&limit=${limit}`);
+            return { team: res.data.data.team || [], pagination: res.data.pagination };
         },
-        enabled: !!user
+        enabled: !!user && (activeTab === 'My Team' || activeTab === 'Review')
     });
 
-    // 2. Fetch My Requests (Team Change Requests targeted to me)
+    // 1b. Fetch ALL Team Members (unpaginated) — For analysis dropdown in Overview
+    const { data: allTeamForDropdownData } = useQuery({
+        queryKey: ['allTeamForDropdown'],
+        queryFn: async () => {
+            const res = await apiClient.get('/users/me/team?limit=1000');
+            return res.data?.data?.team || [];
+        },
+        enabled: !!user && activeTab === 'Overview',
+        staleTime: 60_000
+    });
+
+    const allTeamForDropdown = allTeamForDropdownData || [];
+
+    // 2. Fetch My Requests — Only when Team Requests tab is active
     const { data: requestsData, isLoading: requestsLoading } = useQuery({
-        queryKey: ['myRequests'],
+        queryKey: ['myRequests', requestsPage, limit, requestFilter],
         queryFn: async () => {
-            const res = await apiClient.get('/extras/teams/my-requests');
-            return res.data.data.requests || [];
+            const res = await apiClient.get(`/extras/teams/my-requests?status=${requestFilter !== 'All' ? requestFilter : ''}&page=${requestsPage}&limit=${limit}`);
+            return { requests: res.data.data.requests || [], pagination: res.data.pagination };
         },
-        enabled: !!user
+        enabled: !!user && activeTab === 'Team Requests'
     });
 
-    // 3. Fetch Cycles
+    // 3. Fetch Cycles — Only when Review tab is active
     const { data: cyclesData, isLoading: cyclesLoading } = useQuery({
         queryKey: ['cycles'],
         queryFn: async () => {
             const res = await apiClient.get('/review-cycles');
             return res.data.data.cycles || [];
         },
-        enabled: !!user
+        enabled: !!user && activeTab === 'Review'
     });
 
     // 4. Fetch Skills (for review form structure)
@@ -92,10 +128,30 @@ export default function ManagerDashboardPage() {
     });
 
 
+    // 5. Organisation Directory — All non-admin users, read-only, only on Directory tab
+    const { data: directoryData, isLoading: directoryLoading } = useQuery({
+        queryKey: ['orgDirectory', directoryPage],
+        queryFn: async () => {
+            const res = await apiClient.get('/users', { params: { page: directoryPage, limit: 10 } });
+            // Filter out admins on the frontend — the API already excludes the current user
+            const rawUsers = res.data?.data?.users || [];
+            const pagination = res.data?.pagination || null;
+            return {
+                users: rawUsers.filter((u: any) => u.role !== 'admin'),
+                pagination
+            };
+        },
+        enabled: !!user && activeTab === 'Users',
+        staleTime: 60_000
+    });
 
-    // Derived State
-    const myTeam = teamData || [];
-    const myRequests = requestsData || [];
+    const directoryUsers = directoryData?.users || [];
+    const directoryPagination = directoryData?.pagination || null;
+
+    const myTeam = teamData?.team || [];
+    const teamPagination = teamData?.pagination || null;
+    const myRequests = requestsData?.requests || [];
+    const requestsPagination = requestsData?.pagination || null;
     const cycles = (cyclesData || []).map((cyc: any) => {
         const now = new Date();
         const startDate = new Date(cyc.start_date || cyc.startDate);
@@ -122,15 +178,16 @@ export default function ManagerDashboardPage() {
 
     const activeCyclesCount = cycles.filter((c: any) => c.status === 'Active').length;
 
-    // Calculate Stats
+    // Calculate Stats — Now powered by the lightweight summary API
     const stats = {
-        totalTeamMembers: myTeam.length,
-        pendingRequests: myRequests.filter((r: any) => r.status === 'pending').length,
-        activeCycles: activeCyclesCount,
-        teamPerformance: 0 // Placeholder
+        totalTeamMembers: summaryData?.totalTeamMembers ?? 0,
+        pendingRequests: summaryData?.pendingRequests ?? 0,
+        activeCycles: summaryData?.activeCycles ?? 0,
+        totalUsers: summaryData?.totalWorkforce ?? 0
     };
 
-    const loading = teamLoading || requestsLoading || cyclesLoading;
+    // Only block initial render on the lightweight summary
+    const loading = summaryLoading;
 
     // =========================================================================
     // HELPER FUNCTIONS (Preserved from original)
@@ -153,22 +210,21 @@ export default function ManagerDashboardPage() {
 
     const handleSkipVector = () => {
         const currentCategory = localSkills[currentSkillIdx]?.category;
-        let isMandatory = currentCategory === 'technical' ? validationConfig.tech : validationConfig.nonTech;
+        let isMandatory = false;
 
         // Manager-to-Manager Review Specific Rules
         if (selectedReviewUser?.role?.toLowerCase() === 'manager') {
-            // Updated dynamic validation logic
             const categoryLower = (currentCategory || '').toLowerCase();
             const isTechnical = categoryLower === 'technical' || (categoryLower.includes('technical') && !categoryLower.includes('non'));
             const configKey = isTechnical ? 'tech' : 'nonTech';
 
-            // Check config if available, otherwise fallback
             if (validationConfig && typeof validationConfig[configKey] === 'boolean') {
                 isMandatory = validationConfig[configKey];
             } else {
-                // Default fallback: Technical optional (false), Non-Technical mandatory (true)
                 isMandatory = !isTechnical;
             }
+        } else {
+            isMandatory = currentCategory === 'technical' ? validationConfig?.tech : validationConfig?.nonTech;
         }
 
         if (isMandatory) {
@@ -177,53 +233,52 @@ export default function ManagerDashboardPage() {
             setTimeout(() => setSkipError(false), 500);
             return;
         }
-        setSkipModal({ show: true, questionId: 'VECTOR' });
+
+        showConfirm(
+            'Are you sure you want to skip all questions in this skill? This will mark all questions as skipped. You can undo this later.',
+            'Skip Entire Skills?',
+            'warning'
+        ).then(confirmed => {
+            if (confirmed) {
+                const currentQuestions = localSkills[currentSkillIdx].questions || [];
+                const updates: Record<string, string> = {};
+                currentQuestions.forEach((q: any) => {
+                    updates[(q.id || q._id)] = 'Skipped';
+                });
+                setAssessmentAnswers(prev => ({ ...prev, ...updates }));
+                if (currentSkillIdx < localSkills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
+            }
+        });
     };
 
     const handleTriggerUndoSkip = () => {
-        setSkipModal({ show: true, questionId: 'VECTOR_UNDO' });
-    };
-
-    const confirmSkip = () => {
-        if (skipModal.questionId === 'VECTOR') {
-            const currentQuestions = localSkills[currentSkillIdx].questions || [];
-            const updates: Record<string, string> = {};
-            currentQuestions.forEach((q: any) => {
-                updates[(q.id || q._id)] = 'Skipped';
-            });
-            setAssessmentAnswers(prev => ({ ...prev, ...updates }));
-            setSkipModal({ show: false, questionId: null });
-            if (currentSkillIdx < localSkills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
-        } else if (skipModal.questionId === 'VECTOR_UNDO') {
-            const currentQuestions = localSkills[currentSkillIdx].questions || [];
-            const updates = { ...assessmentAnswers };
-            currentQuestions.forEach((q: any) => {
-                delete updates[(q.id || q._id)];
-            });
-            setAssessmentAnswers(updates);
-            setSkipModal({ show: false, questionId: null });
-        }
+        showConfirm(
+            'Are you sure you want to undo the skip? This will allow you to answer questions again.',
+            'Undo Skip Skill?',
+            'info'
+        ).then(confirmed => {
+            if (confirmed) {
+                const currentQuestions = localSkills[currentSkillIdx].questions || [];
+                const updates = { ...assessmentAnswers };
+                currentQuestions.forEach((q: any) => {
+                    delete updates[(q.id || q._id)];
+                });
+                setAssessmentAnswers(updates);
+            }
+        });
     };
 
     const handleNextVector = () => {
         if (!validateCurrentSkill()) {
-            setWarningModal({
-                show: true,
-                message: 'Please answer all questions in this vector before proceeding. Manager assessments are comprehensive and mandatory.'
-            });
+            showAlert('Please answer all questions in this vector before proceeding. Manager assessments are comprehensive and mandatory.', 'Validation Warning', 'warning');
             return;
         }
 
-        // Mandatory Comment Check
         if (!isVectorSkipped()) {
-            // Safe access using optional chaining and fallback
             const currentSkillId = localSkills[currentSkillIdx]?.id || (localSkills[currentSkillIdx] as any)?._id;
             const comment = assessmentComments[currentSkillId];
             if (!comment || comment.trim().length === 0) {
-                setWarningModal({
-                    show: true,
-                    message: 'Please provide a comment for this section before proceeding.'
-                });
+                showAlert('Please provide a comment for this section before proceeding.', 'Validation Warning', 'warning');
                 return;
             }
         }
@@ -234,9 +289,9 @@ export default function ManagerDashboardPage() {
     const handleCycleSelect = async (cycle: any) => {
         setSelectedCycle(cycle);
         try {
-            const statusRes = await apiClient.get(`/feedback/status?cycle_id=${cycle.id || cycle._id}`);
-            const { pending, completed } = statusRes.data.data;
-            const reviewsList = [...(pending || []), ...(completed || [])].map((r: any) => ({
+            const statusRes = await apiClient.get(`/feedback/status?cycle_id=${cycle.id || cycle._id}&limit=1000`);
+            const { reviews } = statusRes.data.data;
+            const reviewsList = (reviews || []).map((r: any) => ({
                 ...r,
                 status: r.status ? r.status.charAt(0).toUpperCase() + r.status.slice(1) : 'Pending'
             }));
@@ -252,7 +307,7 @@ export default function ManagerDashboardPage() {
     const handleStartReviewFixed = async (targetUser: any) => {
         const review = pendingReviews.find(r => (r.reviewee.id === targetUser.id || r.reviewee._id === targetUser.id));
         if (!review) {
-            setWarningModal({ show: true, message: "No active review cycle found for this user." });
+            showAlert("No active review cycle found for this user.", "Missing Review", "error");
             return;
         }
 
@@ -303,7 +358,7 @@ export default function ManagerDashboardPage() {
 
         } catch (e: any) {
             console.error(e);
-            setWarningModal({ show: true, message: "Failed to load review: " + (e.response?.data?.message || e.message) });
+            showAlert("Failed to load review: " + (e.response?.data?.message || e.message), "Error", "error");
             setReviewView('users');
         }
     };
@@ -332,54 +387,47 @@ export default function ManagerDashboardPage() {
             });
 
             if (isFinal) {
-                setWarningModal({ show: true, message: 'Feedback Submitted Successfully!' });
+                showAlert('Feedback Submitted Successfully!', 'Success', 'success');
                 setReviewView('cycles');
                 // TODO: Invalidate relevant React Query caches here, e.g., queryClient.invalidateQueries({ queryKey: ['myTeam'] });
             } else {
-                setWarningModal({ show: true, message: "Draft Saved." });
+                showAlert("Draft Saved.", "Info", "info");
+                setReviewView('users');
             }
         } catch (e: any) {
-            setWarningModal({ show: true, message: "Submission Failed: " + (e.response?.data?.message || e.message) });
+            showAlert("Submission Failed: " + (e.response?.data?.message || e.message), "Error", "error");
         }
     }
 
     const handleRequestAction = async (id: string, status: string) => {
         try {
-            await apiClient.put(`/extras/teams/requests/${id}`, { status });
+            await apiClient.put(`/extras/teams/admin/requests/${id}`, { status });
             // Invalidate requests query to refresh UI
-            // queryClient.invalidateQueries({ queryKey: ['myRequests'] });
-            // For now, doing manual update or rely on useQuery re-fetch if we had access to queryClient here.
-            // Since we don't have queryClient instance captured in a variable, we should add it.
+            queryClient.invalidateQueries({ queryKey: ['myRequests'] });
+            queryClient.invalidateQueries({ queryKey: ['myTeam'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
         } catch (e: any) {
-            setWarningModal({ show: true, message: "Action Failed: " + (e.response?.data?.message || e.message) });
+            showAlert("Action Failed: " + (e.response?.data?.message || e.message), "Error", "error");
         }
     };
 
     // AUTH CHECK
     useEffect(() => {
         if (!authLoading && (!user || user.role !== 'manager')) {
-            router.push('/login');
+            router.push('/login'); 
         }
     }, [user, authLoading, router]);
 
     // RENDER
-    if (authLoading || loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-                <div className="flex flex-col items-center gap-6">
-                    <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                    <p className="text-sm font-black text-muted-foreground uppercase tracking-[0.3em] animate-pulse">Synchronizing Node Workspace</p>
-                </div>
-            </div>
-        );
-    }
+    if (authLoading) return <ScreenLoader />;
 
     if (!user || user.role !== 'manager') return null;
 
     const tabs = [
         { name: 'Overview', icon: <Activity size={18} /> },
+        { name: 'Users', icon: <UserCheck size={18} /> },
         { name: 'My Team', icon: <Users size={18} /> },
-        { name: 'Perform Review', icon: <BookOpen size={18} /> },
+        { name: 'Review', icon: <BookOpen size={18} /> },
         { name: 'Team Requests', icon: <MessageSquare size={18} /> },
     ];
 
@@ -395,14 +443,16 @@ export default function ManagerDashboardPage() {
                     role="manager"
                     user={user}
                     stats={[
-                        { icon: <Users size={28} />, label: "Total Team", value: stats.totalTeamMembers || 0, color: "primary", delay: 0.1 },
-                        { icon: <UserCheck size={28} />, label: "Avg Performance", value: stats.teamPerformance || 0, color: "green", delay: 0.2 },
+                        { icon: <Users size={28} />, label: "Total Users", value: stats.totalUsers || 0, color: "primary", delay: 0.1 },
+                        { icon: <Users size={28} />, label: "Total Team Users", value: stats.totalTeamMembers || 0, color: "green", delay: 0.2 },
                         { icon: <MessageSquare size={28} />, label: "Pending Requests", value: stats.pendingRequests || 0, color: "orange", delay: 0.3 },
                         { icon: <Award size={28} />, label: "Active Cycles", value: stats.activeCycles || 0, color: "red", delay: 0.4 }
                     ]}
                     pendingReviews={pendingReviews}
                     skills={localSkills}
-
+                    team={allTeamForDropdown}
+                    selectedUserForChart={selectedUserId}
+                    onUserSelect={setSelectedUserId}
                 />
             )}
 
@@ -410,10 +460,23 @@ export default function ManagerDashboardPage() {
                 <UsersList
                     role="manager"
                     users={myTeam}
+                    pagination={teamPagination}
+                    onPageChange={setTeamPage}
                 />
             )}
 
-            {activeTab === 'Perform Review' && (
+            {activeTab === 'Users' && (
+                <UsersList
+                    role="manager"
+                    users={directoryUsers}
+                    pagination={directoryPagination}
+                    onPageChange={setDirectoryPage}
+                    readOnly
+                    showManager
+                />
+            )}
+
+            {activeTab === 'Review' && (
                 <ReviewSystem
                     reviewView={reviewView}
                     cycles={cycles}
@@ -440,9 +503,6 @@ export default function ManagerDashboardPage() {
                     onTriggerSkip={handleSkipVector}
                     onTriggerUndoSkip={handleTriggerUndoSkip}
                     skipError={skipError}
-                    skipModalState={skipModal}
-                    onCloseSkipModal={() => setSkipModal({ show: false, questionId: null })}
-                    onConfirmSkip={confirmSkip}
                     cycleFilter={cycleFilter}
                     onCycleFilterChange={setCycleFilter}
                 />
@@ -452,7 +512,12 @@ export default function ManagerDashboardPage() {
                 <TeamRequests
                     requests={myRequests}
                     filter={requestFilter}
-                    onFilterChange={setRequestFilter}
+                    onFilterChange={(newFilter) => {
+                        setRequestFilter(newFilter);
+                        setRequestsPage(1); // Reset page on filter change
+                    }}
+                    pagination={requestsPagination}
+                    onPageChange={setRequestsPage}
                     onAction={handleRequestAction}
                 />
             )}

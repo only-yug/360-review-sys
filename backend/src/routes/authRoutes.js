@@ -5,13 +5,6 @@ const authController = require('../controllers/authController');
 const authenticate = require('../middleware/authenticate');
 const validate = require('../middleware/validate');
 
-// Validation rules
-const registerValidation = [
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('full_name').notEmpty().withMessage('Full name is required')
-];
-
 const loginValidation = [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required')
@@ -23,7 +16,6 @@ const changePasswordValidation = [
 ];
 
 // Routes
-router.post('/register', registerValidation, validate, authController.register);
 router.post('/login', loginValidation, validate, authController.login);
 router.post('/refresh', authController.refreshToken);
 router.get('/profile', authenticate, authController.getProfile);

@@ -126,7 +126,7 @@ export const EditFeedbackModal: React.FC<EditFeedbackModalProps> = ({
                                                 type="number"
                                                 min="0"
                                                 max="10"
-                                                step="0.1"
+                                                step="1"
                                                 value={answer.score}
                                                 onChange={(e) => handleAnswerChange(idx, parseFloat(e.target.value))}
                                                 className="bg-muted dark:bg-black/30 border-border dark:border-white/10 h-8 text-right font-mono text-sm"

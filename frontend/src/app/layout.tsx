@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AlertProvider } from "@/lib/alert-context";
+import { CustomAlert } from "@/components/ui/custom-alert";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,10 +32,13 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <ReactQueryProvider>
-            <AuthProvider>
-              <Navbar />
-              {children}
-            </AuthProvider>
+            <AlertProvider>
+              <AuthProvider>
+                <Navbar />
+                {children}
+                <CustomAlert />
+              </AuthProvider>
+            </AlertProvider>
           </ReactQueryProvider>
         </ThemeProvider>
       </body>

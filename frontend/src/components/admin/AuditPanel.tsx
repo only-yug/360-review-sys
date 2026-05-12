@@ -22,6 +22,7 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import { CustomSelect } from '@/components/ui/custom-select';
 
 interface AuditPanelProps {
     employee: Employee | null;
@@ -36,6 +37,12 @@ export const AuditPanel: React.FC<AuditPanelProps> = ({ employee, viewMode = 'ta
 
     // Available cycles for history dropdown (excluding current)
     const historyOptions = cycles.filter(c => c.id.toString() !== cycleId.toString());
+
+    // Options for CustomSelect including "Current Cycle"
+    const compareOptions = [
+        { value: "none", label: "Current Cycle" },
+        ...historyOptions.map(c => ({ value: c.id.toString(), label: c.label }))
+    ];
 
     // --- Helpers ---
     const reconstructFeedbacks = (data: any): Feedback[] => {
@@ -231,10 +238,6 @@ export const AuditPanel: React.FC<AuditPanelProps> = ({ employee, viewMode = 'ta
                                 <div className="text-center sm:text-left">
                                     <h1 className="text-2xl font-bold text-foreground dark:text-white tracking-tight">{employee.name}</h1>
                                     <p className="text-muted-foreground dark:text-zinc-400 text-sm font-medium">{employee.role}</p>
-                                    <div className="mt-3 flex flex-wrap gap-2 justify-center sm:justify-start">
-                                        <span className="px-2.5 py-1 rounded-md bg-muted dark:bg-white/5 border border-border dark:border-white/5 text-xs text-foreground dark:text-zinc-300">{employee.department}</span>
-                                        <span className="px-2.5 py-1 rounded-md bg-indigo-100 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 text-xs text-indigo-700 dark:text-indigo-300">FTE</span>
-                                    </div>
                                 </div>
                             </div>
 
@@ -292,18 +295,15 @@ export const AuditPanel: React.FC<AuditPanelProps> = ({ employee, viewMode = 'ta
                                 <History className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                                 <span>Time Travel</span>
                             </div>
-                            <div className="relative">
-                                <select
+                            <div className="w-full">
+                                <CustomSelect
                                     value={historyCycleId || "none"}
-                                    onChange={(e) => setHistoryCycleId(e.target.value === "none" ? null : e.target.value)}
-                                    className="w-full h-10 pl-3 pr-8 text-sm bg-background dark:bg-black/20 border border-border dark:border-white/10 rounded-lg appearance-none focus:outline-none focus:ring-1 focus:ring-indigo-500/50 text-foreground dark:text-zinc-300"
-                                >
-                                    <option value="none" className="bg-background dark:bg-zinc-900">Current Cycle</option>
-                                    {historyOptions.map(cycle => (
-                                        <option key={cycle.id} value={cycle.id} className="bg-background dark:bg-zinc-900">{cycle.label}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-muted-foreground dark:text-zinc-500 pointer-events-none" />
+                                    onChange={(val) => setHistoryCycleId(val === "none" ? null : val)}
+                                    options={compareOptions}
+                                    placeholder="Current Cycle"
+                                    className="w-full"
+                                    selectClassName="h-10 bg-background dark:bg-black/20 border-border dark:border-white/10 rounded-lg"
+                                />
                             </div>
                         </div>
 

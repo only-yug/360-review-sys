@@ -16,6 +16,7 @@ router.use(authenticate);
 
 // Routes
 router.get('/', reviewCycleController.getAllCycles);
+router.get('/minimal/list', reviewCycleController.getMinimalCycles);
 router.get('/:id', reviewCycleController.getCycleById);
 
 // Routes requiring authorization logic specific to cycles are below

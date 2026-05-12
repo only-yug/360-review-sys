@@ -67,21 +67,50 @@ exports.getTopSkillScorers = catchAsync(async (req, res, next) => {
     const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
     const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
 
-    // Fetch active skills
+    // Find all distinct skills that have scores in the given year,
+    // regardless of whether the skill is still active or has been deleted.
+    const distinctSkillIds = await UserSkillScore.findAll({
+        attributes: [
+            [Sequelize.fn('DISTINCT', Sequelize.col('UserSkillScore.skill_id')), 'skill_id']
+        ],
+        include: [
+            {
+                model: EvaluationCycle,
+                attributes: [],
+                where: {
+                    end_date: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                required: true
+            }
+        ],
+        raw: true
+    });
+
+    const skillIds = distinctSkillIds.map(row => row.skill_id);
+
+    // Fetch skill details for all these skills (including inactive/deleted ones)
     const skills = await Skill.findAll({
-        where: { is_active: true }
+        where: { id: { [Op.in]: skillIds } },
+        paranoid: false
+    });
+
+    const skillMap = {};
+    skills.forEach(s => {
+        skillMap[s.id] = s;
     });
 
     const topSkillScorers = [];
 
-    for (const skill of skills) {
+    for (const skillId of skillIds) {
         const topScorerData = await UserSkillScore.findAll({
             attributes: [
                 'user_id',
                 [Sequelize.fn('AVG', Sequelize.col('score_obtained')), 'avg_score']
             ],
             where: {
-                skill_id: skill.id
+                skill_id: skillId
             },
             include: [
                 {
@@ -107,11 +136,12 @@ exports.getTopSkillScorers = catchAsync(async (req, res, next) => {
 
         if (topScorerData && topScorerData.length > 0) {
             const topScorer = topScorerData[0];
+            const skill = skillMap[skillId];
             topSkillScorers.push({
                 skill: {
-                    id: skill.id,
-                    name: skill.skill_name,
-                    category: skill.category
+                    id: skillId,
+                    name: skill ? skill.skill_name : 'Deleted Skill',
+                    category: skill ? skill.category : 'Unknown'
                 },
                 user: topScorer.User,
                 score: parseFloat(topScorer.getDataValue('avg_score')).toFixed(2)
@@ -130,7 +160,8 @@ exports.getTopSkillScorers = catchAsync(async (req, res, next) => {
 
 exports.getScoreHistory = catchAsync(async (req, res, next) => {
     const { userId } = req.params;
-    const { filter, skill_id } = req.query;
+    const { filter, skill_id, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
 
     // 1. Determine Target User (Specific User or Current User)
     let targetUserId = userId === 'all' || !userId ? req.user.id : userId;
@@ -184,6 +215,8 @@ exports.getScoreHistory = catchAsync(async (req, res, next) => {
 
     let historyData = [];
 
+    let totalCount = 0;
+
     // 3. Query Logic
     if (skill_id) {
         // --- Scenario A: Skill-Specific History (UserSkillScore) ---
@@ -193,19 +226,23 @@ exports.getScoreHistory = catchAsync(async (req, res, next) => {
             skill_id: skill_id
         };
 
-        historyData = await UserSkillScore.findAll({
+        const { count, rows } = await UserSkillScore.findAndCountAll({
             where: whereClause,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
             include: [{
                 model: EvaluationCycle,
-                attributes: ['cycle_name', 'end_date'],
+                attributes: ['cycle_name', 'end_date', 'start_date'],
                 where: dateFilter
             }],
             order: [[EvaluationCycle, 'end_date', 'ASC']]
         });
 
+        totalCount = count;
         // Map to standardized format
-        historyData = historyData.map(item => ({
+        historyData = rows.map(item => ({
             period: item.EvaluationCycle ? item.EvaluationCycle.cycle_name : 'Unknown',
+            date: item.EvaluationCycle ? item.EvaluationCycle.start_date : null,
             score: parseFloat(item.score_obtained || 0)
         }));
 
@@ -216,26 +253,35 @@ exports.getScoreHistory = catchAsync(async (req, res, next) => {
             user_id: targetUserId
         };
 
-        historyData = await FinalScore.findAll({
+        const { count, rows } = await FinalScore.findAndCountAll({
             where: whereClause,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
             include: [{
                 model: EvaluationCycle,
-                attributes: ['cycle_name', 'end_date'],
+                attributes: ['cycle_name', 'end_date', 'start_date'],
                 where: dateFilter
             }],
             order: [[EvaluationCycle, 'end_date', 'ASC']]
         });
 
+        totalCount = count;
         // Map to standardized format
-        historyData = historyData.map(item => ({
+        historyData = rows.map(item => ({
             period: item.EvaluationCycle ? item.EvaluationCycle.cycle_name : 'Unknown',
+            date: item.EvaluationCycle ? item.EvaluationCycle.start_date : null,
             score: parseFloat(item.final_score || 0)
         }));
     }
 
     res.status(200).json({
         status: 'success',
-        results: historyData.length,
+        pagination: {
+            total: totalCount,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(totalCount / limit)
+        },
         data: {
             history: historyData
         }
@@ -263,8 +309,6 @@ exports.getLatestSkillDistribution = catchAsync(async (req, res, next) => {
             return next(new AppError('You are not authorized to view this user\'s data', 403));
         }
     }
-
-
     let targetCycleId = req.query.cycle_id;
     let cycleName = 'Custom';
 
@@ -297,7 +341,8 @@ exports.getLatestSkillDistribution = catchAsync(async (req, res, next) => {
         },
         include: [{
             model: Skill,
-            attributes: ['id', 'skill_name', 'category']
+            attributes: ['id', 'skill_name', 'category'],
+            paranoid: false
         }]
     });
 

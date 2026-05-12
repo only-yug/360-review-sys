@@ -11,7 +11,10 @@ router.use(authenticate);
 // List my pending reviews (as reviewer)
 router.get('/pending', feedbackController.getMyPendingReviews);
 
-// Review Status Dashboard (Pending vs Completed)
+// Review Stats (Pending/Completed Counts)
+router.get('/stats', feedbackController.getReviewStats);
+
+// Review Status Dashboard (Pending vs Completed Lists)
 router.get('/status', feedbackController.getReviewStatus);
 
 // Review Interface

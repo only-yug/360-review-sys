@@ -10,10 +10,16 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/auth-context';
+import { useAlert } from '@/lib/alert-context';
+import { ValidatedInput } from '@/components/ui/validated-input';
+import { ValidatedTextarea } from '@/components/ui/validated-textarea';
+import { validateEmail, validatePassword, validateRequired, validateDate, validateWeights } from '@/lib/validation';
 import { useRouter } from 'next/navigation';
 import apiClient from '@/lib/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query'; // [NEW]
 import DashboardShell from '@/components/dashboard/dashboard-shell'; // [NEW]
+import ScreenLoader from '@/components/ui/screen-loader';
+import { CustomSelect } from '@/components/ui/custom-select';
 
 import DashboardOverview from '@/components/dashboard/dashboard-overview';
 import UsersList from '@/components/dashboard/users-list';
@@ -25,6 +31,7 @@ import TeamRequests from '@/components/dashboard/team-requests';
 export default function AdminDashboardPage() {
     const { user, loading: authLoading } = useAuth();
     const router = useRouter();
+    const { showAlert, showConfirm } = useAlert();
     const queryClient = useQueryClient();
 
     // UI State
@@ -33,6 +40,12 @@ export default function AdminDashboardPage() {
     const [cycleFilter, setCycleFilter] = useState('Active');
     const [requestFilter, setRequestFilter] = useState('Pending');
     const [cyclesTabFilter, setCyclesTabFilter] = useState('Active');
+
+    // Pagination States
+    const [usersPage, setUsersPage] = useState(1);
+    const [requestsPage, setRequestsPage] = useState(1);
+    const [cyclesPage, setCyclesPage] = useState(1);
+    const [skillsPage, setSkillsPage] = useState(1);
 
     // Review System UI State
     const [reviewView, setReviewView] = useState<'cycles' | 'users' | 'assessment'>('cycles');
@@ -43,6 +56,10 @@ export default function AdminDashboardPage() {
     const [assessmentComments, setAssessmentComments] = useState<Record<string, string>>({});
     const [pendingReviews, setPendingReviews] = useState<any[]>([]);
     const [currentReviewId, setCurrentReviewId] = useState<string | null>(null);
+    const [userErrors, setUserErrors] = useState<Record<string, string>>({});
+    const [cycleErrors, setCycleErrors] = useState<Record<string, string>>({});
+    const [skillErrors, setSkillErrors] = useState<Record<string, string>>({});
+    const [questionErrors, setQuestionErrors] = useState<Record<string, string>>({});
     const [validationConfig, setValidationConfig] = useState<{ tech: boolean; nonTech: boolean }>({ tech: true, nonTech: true });
 
     // Modals
@@ -56,6 +73,22 @@ export default function AdminDashboardPage() {
     const [warningModal, setWarningModal] = useState<{ show: boolean; message: string }>({ show: false, message: '' });
     const [skipError, setSkipError] = useState(false);
 
+    // Prevent body scroll when any modal is open
+    useEffect(() => {
+        const isAnyModalOpen = userModal.show || skillModal.show || questionModal.show || cycleModal.show || 
+                              deleteModal.show || validationModal.show || skipModal.show || warningModal.show;
+        
+        if (isAnyModalOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'unset';
+        }
+        
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, [userModal.show, skillModal.show, questionModal.show, cycleModal.show, deleteModal.show, validationModal.show, skipModal.show, warningModal.show]);
+
     // Loading States for Mutations
     const [isSubmittingCycle, setIsSubmittingCycle] = useState(false);
     const [isSubmittingSkill, setIsSubmittingSkill] = useState(false);
@@ -67,15 +100,29 @@ export default function AdminDashboardPage() {
     // REACT QUERY: DATA FETCHING
     // =========================================================================
 
-    // 1. Fetch Users (with "Hello" logic override)
-    const { data: usersData, isLoading: usersLoading } = useQuery({
-        queryKey: ['allUsers'],
+    // 0. Dashboard Summary — Lightweight counts for stat cards (fires immediately)
+    const { data: summaryData, isLoading: summaryLoading } = useQuery({
+        queryKey: ['dashboardSummary', 'admin'],
         queryFn: async () => {
-            const res = await apiClient.get('/users');
-            return res.data.data.users || [];
+            const res = await apiClient.get('/admin/dashboard/summary', { params: { role: 'admin' } });
+            return res.data.data;
         },
-        enabled: !!user && user.role === 'admin'
+        enabled: !!user && user.role === 'admin',
+        staleTime: 30_000 // Cache for 30s — mutations will invalidate sooner
     });
+
+    // 1. Fetch Users (with "Hello" logic override) — Only when Users tab is active
+    const { data: usersPayload, isLoading: usersLoading } = useQuery({
+        queryKey: ['allUsers', usersPage],
+        queryFn: async () => {
+            const res = await apiClient.get('/users', { params: { page: usersPage } });
+            return res.data;
+        },
+        enabled: !!user && user.role === 'admin' && (activeTab === 'Users' || activeTab === 'Review')
+    });
+
+    const usersData = usersPayload?.data?.users || [];
+    const usersPagination = usersPayload?.pagination || null;
 
     const users = React.useMemo(() => {
         let list = usersData || [];
@@ -97,15 +144,31 @@ export default function AdminDashboardPage() {
         return list;
     }, [usersData]);
 
-    // 2. Fetch Skills
-    const { data: skillsData, isLoading: skillsLoading } = useQuery({
-        queryKey: ['adminSkills'],
+    // 1b. All Users for Analysis Dropdown — Unpaginated, for Overview tab user selector
+    const { data: allUsersForDropdownData } = useQuery({
+        queryKey: ['allUsersForDropdown'],
         queryFn: async () => {
-            const res = await apiClient.get('/admin/skills');
-            return res.data.data.skills || [];
+            const res = await apiClient.get('/users/minimal/list');
+            return res.data?.data?.users || [];
         },
-        enabled: !!user && user.role === 'admin'
+        enabled: !!user && user.role === 'admin' && (activeTab === 'Overview' || activeTab === 'Users'),
+        staleTime: 60_000
     });
+
+    const allUsersForDropdown = allUsersForDropdownData || [];
+
+    // 2. Fetch Skills — Only when Skills or Review tab is active
+    const { data: skillsPayload, isLoading: skillsLoading } = useQuery({
+        queryKey: ['adminSkills', skillsPage],
+        queryFn: async () => {
+            const res = await apiClient.get('/admin/skills', { params: { page: skillsPage } });
+            return res.data;
+        },
+        enabled: !!user && user.role === 'admin' && (activeTab === 'Skills' || activeTab === 'Review' || activeTab === 'Cycles')
+    });
+
+    const skillsData = skillsPayload?.data?.skills || [];
+    const skillsPagination = skillsPayload?.pagination || null;
 
     const skills = React.useMemo(() => {
         return (skillsData || []).map((skill: any) => ({
@@ -145,15 +208,24 @@ export default function AdminDashboardPage() {
     }, [skillOptionsData, skills]);
 
 
-    // 4. Fetch Cycles
-    const { data: cyclesData, isLoading: cyclesLoading } = useQuery({
-        queryKey: ['adminCycles'],
+    // 4. Fetch Cycles — Only when Cycles or Review tab is active
+    const { data: cyclesPayload, isLoading: cyclesLoading } = useQuery({
+        queryKey: ['adminCycles', activeTab === 'Review' ? cycleFilter : cyclesTabFilter, cyclesPage, activeTab],
         queryFn: async () => {
-            const res = await apiClient.get('/review-cycles');
-            return res.data.data.cycles || [];
+            const currentFilter = activeTab === 'Review' ? cycleFilter : cyclesTabFilter;
+            const res = await apiClient.get('/review-cycles', {
+                params: { 
+                    status: currentFilter.toLowerCase() === 'all' ? undefined : currentFilter.toLowerCase(), 
+                    page: cyclesPage 
+                }
+            });
+            return res.data;
         },
-        enabled: !!user && user.role === 'admin'
+        enabled: !!user && user.role === 'admin' && (activeTab === 'Cycles' || activeTab === 'Review')
     });
+
+    const cyclesData = cyclesPayload?.data?.cycles || [];
+    const cyclesPagination = cyclesPayload?.pagination || null;
 
     const cycles = React.useMemo(() => {
         const freqMap: any = { 1: 'monthly', 3: 'quarterly', 6: '6 monthly', 12: 'yearly' };
@@ -162,7 +234,8 @@ export default function AdminDashboardPage() {
             const startDate = new Date(cycle.start_date || cycle.startDate);
             const endDate = new Date(cycle.end_date || cycle.endDate);
             let status = 'Pending';
-            if (now > endDate) status = 'Closed';
+            if (cycle.deleted_at) status = 'Deleted';
+            else if (now > endDate) status = 'Closed';
             else if (now >= startDate) status = 'Active';
 
             return {
@@ -176,15 +249,20 @@ export default function AdminDashboardPage() {
         });
     }, [cyclesData]);
 
-    // 5. Fetch Team Requests
-    const { data: requestsData, isLoading: requestsLoading } = useQuery({
-        queryKey: ['adminRequests'],
+    // 5. Fetch Team Requests — Only when Requests tab is active
+    const { data: requestsPayload, isLoading: requestsLoading } = useQuery({
+        queryKey: ['adminRequests', requestFilter, requestsPage],
         queryFn: async () => {
-            const res = await apiClient.get('/extras/teams/admin/requests');
-            return res.data.data.requests || [];
+            const res = await apiClient.get('/extras/teams/admin/requests', {
+                params: { status: requestFilter.toLowerCase(), page: requestsPage }
+            });
+            return res.data;
         },
-        enabled: !!user && user.role === 'admin'
+        enabled: !!user && user.role === 'admin' && activeTab === 'Requests'
     });
+
+    const requestsData = requestsPayload?.data?.requests || [];
+    const requestsPagination = requestsPayload?.pagination || null;
 
     const teamRequests = React.useMemo(() => {
         return (requestsData || []).map((req: any) => ({
@@ -202,9 +280,9 @@ export default function AdminDashboardPage() {
     // Helper for active reviews in Review Tab
     const fetchCycleReviews = async (cycleId: string) => {
         try {
-            const statusRes = await apiClient.get(`/feedback/status?cycle_id=${cycleId}`);
-            const { pending, completed } = statusRes.data.data;
-            return [...(pending || []), ...(completed || [])].map((r: any) => ({
+            const statusRes = await apiClient.get(`/feedback/status?cycle_id=${cycleId}&limit=1000`);
+            const { reviews } = statusRes.data.data;
+            return (reviews || []).map((r: any) => ({
                 ...r,
                 status: r.status ? r.status.charAt(0).toUpperCase() + r.status.slice(1) : 'Pending'
             }));
@@ -214,35 +292,40 @@ export default function AdminDashboardPage() {
         }
     };
 
-    // Derived Stats
-    const stats = {
-        totalUsers: users.length,
-        totalSkills: skills.length,
-        activeCycles: cycles.filter((c: any) => c.status === 'Active').length
+    // Derived Stats — Now powered by the lightweight summary API
+    const summaryStats = {
+        totalUsers: summaryData?.totalWorkforce ?? 0,
+        totalSkills: summaryData?.skillsMatrix ?? 0,
+        activeCycles: summaryData?.activeCycles ?? 0,
+        openTickets: summaryData?.openTickets ?? 0
     };
 
-    const loading = usersLoading || skillsLoading || cyclesLoading || requestsLoading;
+    // Only block initial render on the lightweight summary, not all tab data
+    const loading = summaryLoading;
 
     // =========================================================================
     // EVENT HANDLERS
     // =========================================================================
 
     const validateCurrentSkill = () => {
-        if (!skills[currentSkillIdx]) return true;
-        const currentQuestions = skills[currentSkillIdx].questions || [];
+        const activeSkills = reviewSkills || skills;
+        if (!activeSkills[currentSkillIdx]) return true;
+        const currentQuestions = activeSkills[currentSkillIdx].questions || [];
         const missing = currentQuestions.some((q: any) => assessmentAnswers[(q.id || q._id)] === undefined);
         return !missing;
     };
 
     const isVectorSkipped = () => {
-        if (!skills[currentSkillIdx]) return false;
-        const currentQuestions = skills[currentSkillIdx].questions || [];
+        const activeSkills = reviewSkills || skills;
+        if (!activeSkills[currentSkillIdx]) return false;
+        const currentQuestions = activeSkills[currentSkillIdx].questions || [];
         if (currentQuestions.length === 0) return false;
         return currentQuestions.every((q: any) => assessmentAnswers[(q.id || q._id)] === 'Skipped');
     };
 
     const handleSkipVector = () => {
-        const currentCat = skills[currentSkillIdx]?.category || 'Technical';
+        const activeSkills = reviewSkills || skills;
+        const currentCat = activeSkills[currentSkillIdx]?.category || 'Technical';
         const categoryLower = (currentCat || '').toLowerCase();
         const isTechnical = categoryLower === 'technical' || (categoryLower.includes('technical') && !categoryLower.includes('non'));
         const configKey = isTechnical ? 'tech' : 'nonTech';
@@ -267,15 +350,16 @@ export default function AdminDashboardPage() {
     };
 
     const confirmSkip = () => {
+        const activeSkills = reviewSkills || skills;
         if (skipModal.questionId === 'VECTOR') {
-            const currentQuestions = skills[currentSkillIdx].questions || [];
+            const currentQuestions = activeSkills[currentSkillIdx].questions || [];
             const updates: Record<string, string> = {};
             currentQuestions.forEach((q: any) => updates[(q.id || q._id)] = 'Skipped');
             setAssessmentAnswers(prev => ({ ...prev, ...updates }));
             setSkipModal({ show: false, questionId: null });
-            if (currentSkillIdx < skills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
+            if (currentSkillIdx < activeSkills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
         } else if (skipModal.questionId === 'VECTOR_UNDO') {
-            const currentQuestions = skills[currentSkillIdx].questions || [];
+            const currentQuestions = activeSkills[currentSkillIdx].questions || [];
             const updates = { ...assessmentAnswers };
             currentQuestions.forEach((q: any) => delete updates[(q.id || q._id)]);
             setAssessmentAnswers(updates);
@@ -288,43 +372,120 @@ export default function AdminDashboardPage() {
             setWarningModal({ show: true, message: 'Please answer all questions in this vector before proceeding. Admin reviews are mandatory.' });
             return;
         }
+        const activeSkills = reviewSkills || skills;
         if (!isVectorSkipped()) {
-            const currentSkillId = skills[currentSkillIdx]?.id;
+            const currentSkillId = activeSkills[currentSkillIdx]?.id;
             const comment = assessmentComments[currentSkillId];
             if (!comment || comment.trim().length === 0) {
                 setWarningModal({ show: true, message: 'Please provide a comment for this section before proceeding.' });
                 return;
             }
         }
-        if (currentSkillIdx < skills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
+        if (currentSkillIdx < activeSkills.length - 1) setCurrentSkillIdx(currentSkillIdx + 1);
     };
 
     const handleUserAction = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmittingUser) return;
-        setIsSubmittingUser(true);
+
         const { mode, data } = userModal;
+        const errors: Record<string, string> = {};
+
+        // Validation — name & email required for both create and edit
+        const nameErr = validateRequired(data?.full_name, 'Full Name');
+        if (nameErr) errors.full_name = nameErr;
+
+        const emailErr = validateEmail(data?.email || '');
+        if (emailErr) errors.email = emailErr;
+
+        if (mode === 'create') {
+            const passErr = validatePassword(data?.password || '');
+            if (passErr) errors.password = passErr;
+        }
+
+        if (Object.keys(errors).length > 0) {
+            setUserErrors(errors);
+            return;
+        }
+
+        setUserErrors({});
+        setIsSubmittingUser(true);
         try {
             if (mode === 'create') {
-                await apiClient.post('/users/create', data);
+                const managerIds = (data.currentManagers || []).map((m: any) => m.id || m._id);
+                await apiClient.post('/users/create', {
+                    full_name: data.full_name,
+                    email: data.email,
+                    password: data.password,
+                    role: data.role,
+                    managerIds
+                });
             } else {
                 const userId = data._id || data.id;
                 const originalUser = users.find((u: any) => (u._id || u.id) === userId);
+
+                // Update Name & Email
+                if (originalUser && (originalUser.full_name !== data.full_name || originalUser.email !== data.email)) {
+                    await apiClient.put(`/users/${userId}/update`, {
+                        full_name: data.full_name,
+                        email: data.email
+                    });
+                }
+
+                // Update Role
                 if (originalUser && originalUser.role !== data.role) {
                     await apiClient.put(`/users/${userId}/role`, { role: data.role });
                 }
-                const newManagerId = data.managerId;
-                const oldManagerId = originalUser?.manager?._id || originalUser?.manager?.id || originalUser?.managerId;
-                if ((newManagerId || '') !== (oldManagerId || '')) {
-                    await apiClient.post(`/users/${userId}/assign-manager`, { managerId: newManagerId || null });
-                }
+                // Managers are handled live via handleAddManager / handleRemoveManager
             }
             setUserModal({ show: false, mode: 'create', data: null });
             queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+            queryClient.invalidateQueries({ queryKey: ['allUsersForDropdown'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
         } catch (err: any) {
-            alert(err.response?.data?.message || 'Operation failed');
+            showAlert(err.response?.data?.message || 'Operation failed', 'Error', 'error');
         } finally {
             setIsSubmittingUser(false);
+        }
+    };
+
+    // Add one manager to the current employee (live, no save needed)
+    const handleAddManager = async (employeeId: string, managerId: string) => {
+        if (!managerId) return;
+        try {
+            await apiClient.post(`/users/${employeeId}/add-manager`, { managerId });
+            // Update modal's local managers list
+            const mgr = allUsersForDropdown.find((u: any) => (u._id || u.id) === managerId);
+            if (mgr) {
+                setUserModal(prev => ({
+                    ...prev,
+                    data: {
+                        ...prev.data,
+                        currentManagers: [...(prev.data?.currentManagers || []), { id: mgr._id || mgr.id, full_name: mgr.full_name }],
+                        addManagerId: '' // reset dropdown
+                    }
+                }));
+            }
+            queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+        } catch (err: any) {
+            showAlert(err.response?.data?.message || 'Failed to add manager', 'Error', 'error');
+        }
+    };
+
+    // Remove one specific manager from the current employee (live)
+    const handleRemoveManager = async (employeeId: string, managerId: string) => {
+        try {
+            await apiClient.delete(`/users/${employeeId}/remove-manager/${managerId}`);
+            setUserModal(prev => ({
+                ...prev,
+                data: {
+                    ...prev.data,
+                    currentManagers: (prev.data?.currentManagers || []).filter((m: any) => (m.id || m._id) !== managerId)
+                }
+            }));
+            queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+        } catch (err: any) {
+            showAlert(err.response?.data?.message || 'Failed to remove manager', 'Error', 'error');
         }
     };
 
@@ -346,10 +507,11 @@ export default function AdminDashboardPage() {
             if (deleteModal.type === 'user') queryClient.invalidateQueries({ queryKey: ['allUsers'] });
             if (deleteModal.type === 'skill' || deleteModal.type === 'question') queryClient.invalidateQueries({ queryKey: ['adminSkills'] });
             if (deleteModal.type === 'cycle') queryClient.invalidateQueries({ queryKey: ['adminCycles'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
 
             setDeleteModal({ show: false, type: null, id: null, name: '' });
         } catch (err) {
-            alert('Deletion failed.');
+            showAlert('Deletion failed.', 'Error', 'error');
         } finally {
             setIsDeleting(false);
         }
@@ -359,40 +521,57 @@ export default function AdminDashboardPage() {
         try {
             await apiClient.put(`/extras/teams/admin/requests/${id}`, { status: status.toLowerCase() });
             queryClient.invalidateQueries({ queryKey: ['adminRequests'] });
-        } catch (err) { alert('Action failed.'); }
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+        } catch (err) { showAlert('Action failed.', 'Error', 'error'); }
     };
 
     const handleCycleToggle = async (id: string) => {
         try {
             await apiClient.post(`/review-cycles/${id}/start`, {});
             queryClient.invalidateQueries({ queryKey: ['adminCycles'] });
-        } catch (err) { alert('State transition failed.'); }
+        } catch (err) { showAlert('State transition failed.', 'Error', 'error'); }
     };
 
     const handleCycleAction = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmittingCycle) return;
         const { data } = cycleModal;
+        const errors: Record<string, string> = {};
+
+        // Validation logic
+        const nameErr = validateRequired(data.name, 'Cycle Name');
+        if (nameErr) errors.name = nameErr;
+
+        const startErr = validateDate(data.start_date, 'Start Date');
+        if (startErr) errors.start_date = startErr;
+
+        const endErr = validateDate(data.end_date, 'End Date');
+        if (endErr) errors.end_date = endErr;
 
         if (!data.isOneTime && !data.type) {
-            setValidationModal({ show: true, message: 'Please select any one cycle frequency.', redirect: false });
+            errors.type = 'Select a frequency';
+        }
+
+        if (Object.keys(errors).length > 0) {
+            setCycleErrors(errors);
             return;
         }
 
+        setCycleErrors({});
         const today = new Date().toISOString().split('T')[0];
         if (data.start_date < today) {
-            setValidationModal({ show: true, message: 'Start date cannot be in the past.', redirect: false });
+            showAlert('Start date cannot be in the past.', 'Validation Error', 'error');
             return;
         }
 
         if (data.end_date < data.start_date) {
-            setValidationModal({ show: true, message: 'End date cannot be before start date.', redirect: false });
+            showAlert('End date cannot be before start date.', 'Validation Error', 'error');
             return;
         }
 
         const totalQuestions = skills.reduce((acc: any, s: any) => acc + (s.questions?.length || 0), 0);
         if (skills.length === 0 || totalQuestions === 0) {
-            setValidationModal({ show: true, message: 'Please first add skills and questions.', redirect: true });
+            showAlert('Please first add skills and questions before creating a cycle.', 'Missing Content', 'warning');
             return;
         }
 
@@ -410,8 +589,9 @@ export default function AdminDashboardPage() {
             await apiClient.post('/review-cycles', payload);
             setCycleModal({ show: false, data: { name: '', start_date: '', end_date: '', type: null, isOneTime: false } });
             queryClient.invalidateQueries({ queryKey: ['adminCycles'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
         } catch (err: any) {
-            alert(err.response?.data?.message || 'Failed to create cycle');
+            showAlert(err.response?.data?.message || 'Failed to create cycle', 'Error', 'error');
         } finally {
             setIsSubmittingCycle(false);
         }
@@ -420,8 +600,20 @@ export default function AdminDashboardPage() {
     const handleQuestionAction = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmittingQuestion) return;
-        setIsSubmittingQuestion(true);
+        
         const { mode, data } = questionModal;
+        const errors: Record<string, string> = {};
+
+        const textErr = validateRequired(data.text, 'Question text');
+        if (textErr) errors.text = textErr;
+
+        if (Object.keys(errors).length > 0) {
+            setQuestionErrors(errors);
+            return;
+        }
+
+        setQuestionErrors({});
+        setIsSubmittingQuestion(true);
         try {
             const payload = { question_text: data.text, question_type: data.type === 'Rating' ? 'scale_1_10' : 'yes_no' };
             if (mode === 'create') await apiClient.post(`/admin/skills/${data.skill_id}/questions`, payload);
@@ -430,7 +622,7 @@ export default function AdminDashboardPage() {
             setQuestionModal({ ...questionModal, show: false });
             queryClient.invalidateQueries({ queryKey: ['adminSkills'] });
         } catch (err) {
-            alert('Operation failed.');
+            showAlert('Operation failed.', 'Error', 'error');
         } finally {
             setIsSubmittingQuestion(false);
         }
@@ -440,19 +632,31 @@ export default function AdminDashboardPage() {
         e.preventDefault();
         if (isSubmittingSkill) return;
         const { mode, data } = skillModal;
+        const errors: Record<string, string> = {};
 
-        if (!data.name) return alert("Skill name is required.");
-        const empW = Number(data.employee_weight);
-        const mgrW = Number(data.manager_weight);
-        if (isNaN(empW) || isNaN(mgrW) || empW < 0 || empW > 100 || mgrW < 0 || mgrW > 100) return alert("Invalid weights");
+        // Validation logic
+        const nameErr = validateRequired(data.name, 'Skill Name');
+        if (nameErr) errors.name = nameErr;
 
+        const empWErr = validateWeights(data.employee_weight, 'Employee Weight');
+        if (empWErr) errors.employee_weight = empWErr;
+
+        const mgrWErr = validateWeights(data.manager_weight, 'Manager Weight');
+        if (mgrWErr) errors.manager_weight = mgrWErr;
+
+        if (Object.keys(errors).length > 0) {
+            setSkillErrors(errors);
+            return;
+        }
+
+        setSkillErrors({});
         setIsSubmittingSkill(true);
         try {
             const payload = {
                 skill_name: data.name,
                 category: data.category || 'technical',
-                weight_employee: empW,
-                weight_manager: mgrW
+                weight_employee: Number(data.employee_weight),
+                weight_manager: Number(data.manager_weight)
             };
             if (mode === 'create') await apiClient.post('/admin/skills', payload);
             else await apiClient.put(`/admin/skills/${data._id || data.id}`, payload);
@@ -460,7 +664,7 @@ export default function AdminDashboardPage() {
             setSkillModal({ ...skillModal, show: false });
             queryClient.invalidateQueries({ queryKey: ['adminSkills'] });
         } catch (err: any) {
-            alert(err.response?.data?.message || 'Skill configuration failed.');
+            showAlert(err.response?.data?.message || 'Skill configuration failed.', 'Error', 'error');
         } finally {
             setIsSubmittingSkill(false);
         }
@@ -639,6 +843,8 @@ export default function AdminDashboardPage() {
                 const activeC = cycles.find((c: any) => c.status === 'Active');
                 if (activeC) handleCycleSelect(activeC); // Refresh
                 else setReviewView('cycles');
+            } else {
+                setReviewView('users'); // Route back to the users list
             }
         } catch (err: any) {
             setWarningModal({ show: true, message: "Submission Failed: " + (err.response?.data?.message || err.message) });
@@ -650,14 +856,7 @@ export default function AdminDashboardPage() {
         if (!authLoading && (!user || user.role !== 'admin')) router.push('/login');
     }, [user, authLoading, router]);
 
-    if (authLoading || loading) return (
-        <div className="flex min-h-screen items-center justify-center bg-background">
-            <div className="flex flex-col items-center gap-6">
-                <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                <p className="text-sm font-black text-muted-foreground uppercase tracking-[0.3em] animate-pulse">Initializing Admin Hub</p>
-            </div>
-        </div>
-    );
+    if (authLoading) return <ScreenLoader />;
 
     if (!user || user.role !== 'admin') return null;
 
@@ -683,15 +882,14 @@ export default function AdminDashboardPage() {
                         role="admin"
                         user={user}
                         stats={[
-                            { icon: <Users size={28} />, label: "Total Workforce", value: stats.totalUsers || 0, color: "primary", delay: 0.1 },
-                            { icon: <BookOpen size={28} />, label: "Skills Matrix", value: stats.totalSkills || 0, color: "blue", delay: 0.2 },
-                            { icon: <Clock size={28} />, label: "Active Cycles", value: stats.activeCycles || 0, color: "green", delay: 0.3 },
-                            { icon: <MessageSquare size={28} />, label: "Open Tickets", value: teamRequests.filter((r: any) => r.status === 'Pending').length || 0, color: "orange", delay: 0.4 }
+                            { icon: <Users size={28} />, label: "Total Users", value: summaryStats.totalUsers, color: "primary", delay: 0.1 },
+                            { icon: <BookOpen size={28} />, label: "Total Skills", value: summaryStats.totalSkills, color: "blue", delay: 0.2 },
+                            { icon: <Clock size={28} />, label: "Active Cycles", value: summaryStats.activeCycles, color: "green", delay: 0.3 },
+                            { icon: <MessageSquare size={28} />, label: "Pending Request", value: summaryStats.openTickets, color: "orange", delay: 0.4 }
                         ]}
                         pendingReviews={pendingReviews}
                         skills={skillOptions}
-
-                        allUsers={users}
+                        allUsers={allUsersForDropdown}
                         selectedUserForChart={selectedUserForChart}
                         onUserSelect={setSelectedUserForChart}
                     />
@@ -701,8 +899,22 @@ export default function AdminDashboardPage() {
                     <UsersList
                         role="admin"
                         users={users}
-                        onAddUser={() => setUserModal({ show: true, mode: 'create', data: { full_name: '', email: '', password: '', role: 'employee', managerId: '' } })}
-                        onEditUser={(u: any) => setUserModal({ show: true, mode: 'edit', data: { ...u, managerId: u.manager_id || u.manager?.id || u.managerId || '' } })}
+                        pagination={usersPagination}
+                        onPageChange={setUsersPage}
+                        onAddUser={() => setUserModal({ show: true, mode: 'create', data: { full_name: '', email: '', password: '', role: 'employee', currentManagers: [], addManagerId: '' } })}
+                        onEditUser={(u: any) => {
+                            // Build currentManagers array from user's manager data
+                            const mgrs = Array.isArray(u.manager)
+                                ? u.manager.map((m: any) => ({ id: m.id || m._id, full_name: m.full_name || m.name }))
+                                : u.manager
+                                    ? [{ id: u.manager.id || u.manager._id, full_name: u.manager.full_name || u.manager.name }]
+                                    : [];
+                            setUserModal({
+                                show: true,
+                                mode: 'edit',
+                                data: { ...u, currentManagers: mgrs, addManagerId: '' }
+                            });
+                        }}
                         onDeleteUser={(id: string, name: string) => openDeleteModal('user', id, name)}
                     />
                 )}
@@ -710,6 +922,8 @@ export default function AdminDashboardPage() {
                 {activeTab === 'Skills' && (
                     <SkillsManagement
                         skills={skills}
+                        pagination={skillsPagination}
+                        onPageChange={setSkillsPage}
                         onAddSkill={() => setSkillModal({ show: true, mode: 'create', data: { name: '', category: 'technical', employee_weight: 0, manager_weight: 0 } })}
                         onEditSkill={(s: any) => setSkillModal({ show: true, mode: 'edit', data: s })}
                         onDeleteSkill={(id: string, name: string) => openDeleteModal('skill', id, name)}
@@ -723,7 +937,12 @@ export default function AdminDashboardPage() {
                     <CyclesManagement
                         cycles={cycles}
                         cyclesTabFilter={cyclesTabFilter}
-                        onFilterChange={setCyclesTabFilter}
+                        onFilterChange={(newFilter) => {
+                            setCyclesTabFilter(newFilter);
+                            setCyclesPage(1); // Reset page on filter change
+                        }}
+                        pagination={cyclesPagination}
+                        onPageChange={setCyclesPage}
                         onCreateCycle={() => setCycleModal({ show: true, data: { name: '', start_date: '', end_date: '', type: null, isOneTime: false } })}
                         onToggleStatus={handleCycleToggle}
                         onDeleteCycle={(id: string, name: string) => openDeleteModal('cycle', id, name)}
@@ -734,11 +953,16 @@ export default function AdminDashboardPage() {
                     <TeamRequests
                         requests={teamRequests}
                         filter={requestFilter}
-                        onFilterChange={setRequestFilter}
+                        onFilterChange={(newFilter) => {
+                            setRequestFilter(newFilter);
+                            setRequestsPage(1); // Reset page on filter change
+                        }}
+                        pagination={requestsPagination}
+                        onPageChange={setRequestsPage}
                         onAction={handleTeamRequest}
                         title="Requests"
                         subtitle=""
-                        emptyMessage={`No ${requestFilter.toLowerCase()} structural modifications`}
+                        emptyMessage={`No ${requestFilter.toLowerCase()} request found`}
                     />
                 )}
 
@@ -783,8 +1007,13 @@ export default function AdminDashboardPage() {
                             <ShieldAlert size={32} />
                         </div>
                         <h4 className="text-xl font-black mb-3">System Notification</h4>
-                        <p className="mb-6">{warningModal.message}</p>
-                        <button onClick={() => setWarningModal({ ...warningModal, show: false })} className="btn-primary w-full h-12 rounded-xl">Understood</button>
+                        <p className="mb-6 leading-relaxed text-gray-300 font-medium text-sm">{warningModal.message}</p>
+                        <button 
+                            onClick={() => setWarningModal({ ...warningModal, show: false })} 
+                            className="w-full py-3 bg-primary text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all active:scale-95 flex items-center justify-center"
+                        >
+                            Confirm
+                        </button>
                     </div>
                 </Modal>
             )}
@@ -797,7 +1026,7 @@ export default function AdminDashboardPage() {
                         <button onClick={() => {
                             setValidationModal({ ...validationModal, show: false });
                             if (validationModal.redirect) { setCycleModal({ ...cycleModal, show: false }); setActiveTab('Skills'); }
-                        }} className="btn-primary w-full h-12 rounded-xl">Understood</button>
+                        }} className="btn-primary w-full h-12 rounded-xl">Confirm</button>
                     </div>
                 </Modal>
             )}
@@ -814,7 +1043,7 @@ export default function AdminDashboardPage() {
 
             {/* Delete Modal */}
             {deleteModal.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 dark:bg-black/70">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 dark:bg-black/70">
                     <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white dark:bg-[#1a1a1a] p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border dark:border-white/10">
                         <Trash2 size={40} className="text-red-500 mx-auto mb-4" />
                         <h4 className="text-2xl font-black mb-2">Confirm Deletion</h4>
@@ -829,10 +1058,10 @@ export default function AdminDashboardPage() {
 
             {/* Skip Modal */}
             {skipModal.show && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-xl bg-black/60">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/60">
                     <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-[#1a1a1a] p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center border dark:border-white/10">
                         <HelpCircle size={32} className="mx-auto mb-4 text-gray-500" />
-                        <h4 className="text-xl font-black mb-2">{skipModal.questionId === 'VECTOR_UNDO' ? 'Undo Skip?' : 'Skip Vector?'}</h4>
+                        <h4 className="text-xl font-black mb-2">{skipModal.questionId === 'VECTOR_UNDO' ? 'Undo Skip?' : 'Skip Skill?'}</h4>
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => setSkipModal({ show: false, questionId: null })} className="flex-1 py-3 font-bold bg-gray-100 dark:bg-white/5 rounded-xl">Cancel</button>
                             <button onClick={confirmSkip} className="flex-1 py-3 font-bold bg-primary text-white rounded-xl">Confirm</button>
@@ -843,65 +1072,147 @@ export default function AdminDashboardPage() {
 
             {/* User Modal - Simplified for brevity but keeping fields */}
             {userModal.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
                     <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-xl p-8 rounded-3xl border dark:border-white/10 relative">
                         <button onClick={() => setUserModal({ ...userModal, show: false })} className="absolute top-6 right-6 p-2"><X size={24} /></button>
                         <h3 className="text-2xl font-black mb-6">{userModal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-                        <form onSubmit={handleUserAction} className="space-y-4">
-                            <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Full Name</label>
-                                <input className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    value={userModal.data?.full_name || ''}
-                                    onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, full_name: e.target.value } })}
-                                    disabled={userModal.mode === 'edit'}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Email</label>
-                                <input className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    type="email"
-                                    value={userModal.data?.email || ''}
-                                    onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, email: e.target.value } })}
-                                    disabled={userModal.mode === 'edit'}
-                                    required
-                                />
-                            </div>
+                        <form onSubmit={handleUserAction} className="space-y-4" noValidate>
+                            <ValidatedInput
+                                label="Full Name"
+                                placeholder="Enter full name"
+                                value={userModal.data?.full_name || ''}
+                                onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, full_name: e.target.value } })}
+                                error={userErrors.full_name}
+                            />
+                            <ValidatedInput
+                                label="Email"
+                                type="email"
+                                placeholder="name@company.com"
+                                value={userModal.data?.email || ''}
+                                onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, email: e.target.value } })}
+                                error={userErrors.email}
+                            />
                             {userModal.mode === 'create' && (
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Password</label>
-                                    <input className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        type="password"
-                                        value={userModal.data?.password || ''}
-                                        onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, password: e.target.value } })}
-                                        required
-                                    />
-                                </div>
+                                <ValidatedInput
+                                    label="Password"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={userModal.data?.password || ''}
+                                    onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, password: e.target.value } })}
+                                    error={userErrors.password}
+                                />
                             )}
                             <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Role</label>
-                                <select className="w-full h-12 bg-gray-50 dark:bg-[#2a2a2a] rounded-xl px-4 border border-transparent focus:border-primary outline-none"
+                                <label className="text-sm font-bold text-gray-500 mb-2 block">Role</label>
+                                <CustomSelect
                                     value={userModal.data?.role || 'employee'}
-                                    onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, role: e.target.value } })}
-                                >
-                                    <option value="employee">Employee</option>
-                                    <option value="manager">Manager</option>
-                                </select>
+                                    onChange={val => setUserModal({ ...userModal, data: { ...userModal.data, role: val } })}
+                                    options={[
+                                        { value: 'employee', label: 'Employee' },
+                                        { value: 'manager', label: 'Manager' }
+                                    ]}
+                                    fullWidth
+                                />
                             </div>
-                            {userModal.data?.role !== 'manager' && (
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Manager</label>
-                                    <select className="w-full h-12 bg-gray-50 dark:bg-[#2a2a2a] rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        value={userModal.data?.managerId || ''}
-                                        onChange={e => setUserModal({ ...userModal, data: { ...userModal.data, managerId: e.target.value } })}
-                                    >
-                                        <option value="">No Manager</option>
-                                        {users.filter((u: any) => u.role === 'manager' && u._id !== userModal.data?.id).map((m: any) => (
-                                            <option key={m._id || m.id} value={m._id || m.id}>{m.full_name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
+
+                            {/* ── MANAGER SECTION ────────────────────────────── */}
+                            {userModal.data?.role !== 'manager' && (() => {
+                                const empId = userModal.data?._id || userModal.data?.id;
+                                const currentManagers: any[] = userModal.data?.currentManagers || [];
+                                const currentIds = new Set(currentManagers.map((m: any) => String(m.id || m._id)));
+                                const available = allUsersForDropdown.filter((u: any) =>
+                                    ['manager', 'admin'].includes(u.role?.toLowerCase()) &&
+                                    !currentIds.has(String(u._id || u.id))
+                                );
+
+                                const onRemove = (managerId: string) => {
+                                    if (userModal.mode === 'create') {
+                                        setUserModal(prev => ({
+                                            ...prev,
+                                            data: {
+                                                ...prev.data,
+                                                currentManagers: (prev.data?.currentManagers || []).filter((m: any) => (m.id || m._id) !== managerId)
+                                            }
+                                        }));
+                                    } else {
+                                        handleRemoveManager(empId, managerId);
+                                    }
+                                };
+
+                                const onAdd = () => {
+                                    const selectedId = userModal.data?.addManagerId;
+                                    if (!selectedId) return;
+                                    if (userModal.mode === 'create') {
+                                        const mgr = allUsersForDropdown.find((u: any) => (u._id || u.id) === selectedId);
+                                        if (mgr) {
+                                            setUserModal(prev => ({
+                                                ...prev,
+                                                data: {
+                                                    ...prev.data,
+                                                    currentManagers: [...(prev.data?.currentManagers || []), { id: mgr._id || mgr.id, full_name: mgr.full_name || mgr.name }],
+                                                    addManagerId: ''
+                                                }
+                                            }));
+                                        }
+                                    } else {
+                                        handleAddManager(empId, selectedId);
+                                    }
+                                };
+
+                                return (
+                                    <div className="space-y-3">
+                                        <label className="text-sm font-bold text-gray-500 block">Assigned Managers</label>
+
+                                        {/* Current manager chips */}
+                                        <div className="flex flex-wrap gap-2 min-h-[2.5rem]">
+                                            {currentManagers.length === 0 && (
+                                                <span className="text-xs text-muted-foreground italic opacity-50">No managers assigned</span>
+                                            )}
+                                            {currentManagers.map((m: any) => (
+                                                <span
+                                                    key={m.id || m._id}
+                                                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-black uppercase tracking-wide"
+                                                >
+                                                    {m.full_name || m.name}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onRemove(m.id || m._id)}
+                                                        className="w-4 h-4 rounded-full bg-primary/20 hover:bg-red-500 hover:text-white text-primary flex items-center justify-center transition-colors"
+                                                    >
+                                                        <X size={10} strokeWidth={3} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+
+                                        {/* Add another manager */}
+                                        {available.length > 0 && (
+                                            <div className="flex gap-2 items-center pt-1">
+                                                <div className="flex-1">
+                                                    <CustomSelect
+                                                        value={userModal.data?.addManagerId || ''}
+                                                        onChange={val => setUserModal(prev => ({ ...prev, data: { ...prev.data, addManagerId: val } }))}
+                                                        options={[
+                                                            { value: '', label: '+ Select manager to add...' },
+                                                            ...available.map((m: any) => ({ value: m._id || m.id, label: m.full_name || m.name }))
+                                                        ]}
+                                                        fullWidth
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={onAdd}
+                                                    disabled={!userModal.data?.addManagerId}
+                                                    className="px-4 py-3 bg-primary text-white rounded-xl font-black text-xs disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95 whitespace-nowrap"
+                                                >
+                                                    Add
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
                             <button type="submit" disabled={isSubmittingUser} className="w-full h-14 bg-primary text-white font-bold rounded-xl mt-4">
                                 {isSubmittingUser ? 'Processing...' : 'Save User'}
                             </button>
@@ -912,48 +1223,58 @@ export default function AdminDashboardPage() {
 
             {/* Cycle Modal */}
             {cycleModal.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
                     <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-xl p-8 rounded-3xl border dark:border-white/10 relative">
                         <button onClick={() => setCycleModal({ ...cycleModal, show: false })} className="absolute top-6 right-6 p-2"><X size={24} /></button>
                         <h3 className="text-2xl font-black mb-6">Launch New Cycle</h3>
-                        <form onSubmit={handleCycleAction} className="space-y-4">
-                            <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Cycle Name</label>
-                                <input className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    value={cycleModal.data.name} onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, name: e.target.value } })} required />
-                            </div>
+                        <form onSubmit={handleCycleAction} className="space-y-4" noValidate>
+                            <ValidatedInput
+                                label="Cycle Name"
+                                placeholder="e.g. Q2 Performance Review"
+                                value={cycleModal.data.name}
+                                onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, name: e.target.value } })}
+                                error={cycleErrors.name}
+                            />
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Start Date</label>
-                                    <input type="date" className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        min={new Date().toISOString().split('T')[0]}
-                                        value={cycleModal.data.start_date} onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, start_date: e.target.value } })} required />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">End Date</label>
-                                    <input type="date" className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        min={cycleModal.data.start_date || new Date().toISOString().split('T')[0]}
-                                        value={cycleModal.data.end_date} onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, end_date: e.target.value } })} required />
-                                </div>
+                                <ValidatedInput
+                                    label="Start Date"
+                                    type="date"
+                                    min={new Date().toISOString().split('T')[0]}
+                                    value={cycleModal.data.start_date}
+                                    onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, start_date: e.target.value } })}
+                                    error={cycleErrors.start_date}
+                                />
+                                <ValidatedInput
+                                    label="End Date"
+                                    type="date"
+                                    min={cycleModal.data.start_date || new Date().toISOString().split('T')[0]}
+                                    value={cycleModal.data.end_date}
+                                    onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, end_date: e.target.value } })}
+                                    error={cycleErrors.end_date}
+                                />
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 py-2">
                                 <input type="checkbox" checked={cycleModal.data.isOneTime}
                                     onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, isOneTime: e.target.checked } })}
                                     id="oneTime" className="w-5 h-5 accent-primary" />
-                                <label htmlFor="oneTime" className="font-bold">One-time Cycle</label>
+                                <label htmlFor="oneTime" className="font-bold text-sm">One-time Cycle</label>
                             </div>
                             {!cycleModal.data.isOneTime && (
                                 <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Frequency</label>
-                                    <select className="w-full h-12 bg-gray-50 dark:bg-[#2a2a2a] rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        value={cycleModal.data.type || ''} onChange={e => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, type: e.target.value } })}
-                                    >
-                                        <option value="">Select Frequency</option>
-                                        <option value="monthly">Monthly</option>
-                                        <option value="quarterly">Quarterly</option>
-                                        <option value="6 monthly">6 Monthly</option>
-                                        <option value="yearly">Yearly</option>
-                                    </select>
+                                    <label className="text-sm font-bold text-gray-500 mb-2 block">Frequency</label>
+                                    <CustomSelect
+                                        value={cycleModal.data.type || ''}
+                                        onChange={val => setCycleModal({ ...cycleModal, data: { ...cycleModal.data, type: val } })}
+                                        options={[
+                                            { value: 'monthly', label: 'Monthly' },
+                                            { value: 'quarterly', label: 'Quarterly' },
+                                            { value: '6 monthly', label: '6 Monthly' },
+                                            { value: 'yearly', label: 'Yearly' }
+                                        ]}
+                                        fullWidth
+                                        error={!!cycleErrors.type}
+                                        errorText={cycleErrors.type}
+                                    />
                                 </div>
                             )}
                             <button type="submit" disabled={isSubmittingCycle} className="w-full h-14 bg-primary text-white font-bold rounded-xl mt-4">
@@ -966,36 +1287,47 @@ export default function AdminDashboardPage() {
 
             {/* Skill Modal */}
             {skillModal.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
                     <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-xl p-8 rounded-3xl border dark:border-white/10 relative">
                         <button onClick={() => setSkillModal({ ...skillModal, show: false })} className="absolute top-6 right-6 p-2"><X size={24} /></button>
                         <h3 className="text-2xl font-black mb-6">{skillModal.mode === 'create' ? 'Add Skill' : 'Edit Skill'}</h3>
-                        <form onSubmit={handleSkillAction} className="space-y-4">
+                        <form onSubmit={handleSkillAction} className="space-y-4" noValidate>
+                            <ValidatedInput
+                                label="Skill Name"
+                                placeholder="e.g. Communication"
+                                value={skillModal.data.name}
+                                onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, name: e.target.value } })}
+                                error={skillErrors.name}
+                            />
                             <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Skill Name</label>
-                                <input className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    value={skillModal.data.name} onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, name: e.target.value } })} required />
-                            </div>
-                            <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Category</label>
-                                <select className="w-full h-12 bg-gray-50 dark:bg-[#2a2a2a] rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    value={skillModal.data.category || 'technical'} onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, category: e.target.value } })}
-                                >
-                                    <option value="technical">Technical</option>
-                                    <option value="non_technical">Non-Technical</option>
-                                </select>
+                                <label className="text-sm text-gray-500 font-bold mb-2 block">Category</label>
+                                <CustomSelect
+                                    value={skillModal.data.category || 'technical'}
+                                    onChange={val => setSkillModal({ ...skillModal, data: { ...skillModal.data, category: val } })}
+                                    options={[
+                                        { value: 'technical', label: 'Technical' },
+                                        { value: 'non_technical', label: 'Non-Technical' }
+                                    ]}
+                                    fullWidth
+                                />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Emp Weight</label>
-                                    <input type="number" className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        value={skillModal.data.employee_weight} onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, employee_weight: e.target.value } })} />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-bold uppercase text-gray-500">Mgr Weight</label>
-                                    <input type="number" className="w-full h-12 bg-gray-50 dark:bg-white/5 rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                        value={skillModal.data.manager_weight} onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, manager_weight: e.target.value } })} />
-                                </div>
+                                <ValidatedInput
+                                    label="Employee Weight"
+                                    type="number"
+                                    placeholder="0-100"
+                                    value={skillModal.data.employee_weight}
+                                    onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, employee_weight: e.target.value } })}
+                                    error={skillErrors.employee_weight}
+                                />
+                                <ValidatedInput
+                                    label="Managers Weight"
+                                    type="number"
+                                    placeholder="0-100"
+                                    value={skillModal.data.manager_weight}
+                                    onChange={e => setSkillModal({ ...skillModal, data: { ...skillModal.data, manager_weight: e.target.value } })}
+                                    error={skillErrors.manager_weight}
+                                />
                             </div>
                             <button type="submit" disabled={isSubmittingSkill} className="w-full h-14 bg-primary text-white font-bold rounded-xl mt-4">
                                 {isSubmittingSkill ? 'Processing...' : 'Save Skill'}
@@ -1007,24 +1339,29 @@ export default function AdminDashboardPage() {
 
             {/* Question Modal */}
             {questionModal.show && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/50 overflow-y-auto">
                     <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-xl p-8 rounded-3xl border dark:border-white/10 relative">
                         <button onClick={() => setQuestionModal({ ...questionModal, show: false })} className="absolute top-6 right-6 p-2"><X size={24} /></button>
                         <h3 className="text-2xl font-black mb-6">{questionModal.mode === 'create' ? 'Add Question' : 'Edit Question'}</h3>
-                        <form onSubmit={handleQuestionAction} className="space-y-4">
+                        <form onSubmit={handleQuestionAction} className="space-y-4" noValidate>
+                            <ValidatedTextarea
+                                label="Question Text"
+                                placeholder="Describe the evaluation criteria..."
+                                value={questionModal.data.text}
+                                onChange={e => setQuestionModal({ ...questionModal, data: { ...questionModal.data, text: e.target.value } })}
+                                error={questionErrors.text}
+                            />
                             <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Question Text</label>
-                                <textarea className="w-full h-32 bg-gray-50 dark:bg-white/5 rounded-xl p-4 border border-transparent focus:border-primary outline-none resize-none"
-                                    value={questionModal.data.text} onChange={e => setQuestionModal({ ...questionModal, data: { ...questionModal.data, text: e.target.value } })} required />
-                            </div>
-                            <div>
-                                <label className="text-sm font-bold uppercase text-gray-500">Type</label>
-                                <select className="w-full h-12 bg-gray-50 dark:bg-[#2a2a2a] rounded-xl px-4 border border-transparent focus:border-primary outline-none"
-                                    value={questionModal.data.type || 'Rating'} onChange={e => setQuestionModal({ ...questionModal, data: { ...questionModal.data, type: e.target.value } })}
-                                >
-                                    <option value="Rating">Rating Scale (1-10)</option>
-                                    <option value="Boolean">Boolean (Yes/No)</option>
-                                </select>
+                                <label className="text-sm font-bold text-gray-500 text-muted-foreground/70 mb-2 block">Type</label>
+                                <CustomSelect
+                                    value={questionModal.data.type || 'Rating'}
+                                    onChange={val => setQuestionModal({ ...questionModal, data: { ...questionModal.data, type: val } })}
+                                    options={[
+                                        { value: 'Rating', label: 'Rating Scale (1-10)' },
+                                        { value: 'Boolean', label: 'Boolean (Yes/No)' }
+                                    ]}
+                                    fullWidth
+                                />
                             </div>
                             <button type="submit" disabled={isSubmittingQuestion} className="w-full h-14 bg-primary text-white font-bold rounded-xl mt-4">
                                 {isSubmittingQuestion ? 'Processing...' : 'Save Question'}
@@ -1041,7 +1378,7 @@ export default function AdminDashboardPage() {
 // Simple Modal Wrapper for reusable ones
 function Modal({ children, onClose }: any) {
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-3xl bg-black/60 overflow-y-auto">
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 sm:p-6 backdrop-blur-3xl bg-black/60 overflow-y-auto">
             <motion.div
                 initial={{ scale: 0.9, opacity: 0, y: 30 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}

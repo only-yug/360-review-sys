@@ -23,10 +23,6 @@ module.exports = (sequelize) => {
                 key: 'id',
             },
         },
-        relationship_type: {
-            type: DataTypes.STRING(50),
-            allowNull: true,
-        },
         is_active: {
             type: DataTypes.BOOLEAN,
             defaultValue: true,

@@ -562,7 +562,7 @@ export default function ReviewConsolePage() {
                                                                 : 'bg-white/5 hover:bg-white/10 text-white/50 hover:text-white hover:border-white/10'
                                                             }`}
                                                     >
-                                                        {isVectorSkipped() ? 'Undo Skip' : 'Skip Vector'}
+                                                        {isVectorSkipped() ? 'Undo Skip' : 'Skip Skill'}
                                                     </button>
                                                 </div>
                                             </div>
@@ -676,7 +676,7 @@ export default function ReviewConsolePage() {
                         <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-amber-500"><ShieldAlert size={32} /></div>
                         <h4 className="text-xl font-black tracking-tight text-white uppercase mb-3">Notice</h4>
                         <p className="text-sm font-medium text-gray-400 mb-8">{warningModal.message}</p>
-                        <button onClick={() => setWarningModal({ ...warningModal, show: false })} className="w-full h-12 bg-primary text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-primary/20">Understood</button>
+                        <button onClick={() => setWarningModal({ ...warningModal, show: false })} className="w-full h-12 bg-primary text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-primary/20">Confirm</button>
                     </motion.div>
                 </div>
             )}
@@ -686,7 +686,7 @@ export default function ReviewConsolePage() {
                     <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-[400px] bg-[#1a1a1a] border border-white/10 p-8 rounded-3xl text-center">
                         <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 text-gray-500"><HelpCircle size={32} /></div>
                         <h4 className="text-xl font-black tracking-tight text-white uppercase mb-3 text-white">
-                            {skipModal.questionId === 'VECTOR_UNDO' ? 'Undo Skip Vector?' : 'Skip Entire Vector?'}
+                            {skipModal.questionId === 'VECTOR_UNDO' ? 'Undo Skip Skill?' : 'Skip Entire Skill?'}
                         </h4>
                         <p className="text-sm font-medium text-gray-400 mb-8">
                             {skipModal.questionId === 'VECTOR_UNDO'

@@ -19,14 +19,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<User | undefined>;
   logout: () => void;
-  register: (data: RegisterData) => Promise<void>;
 }
 
-interface RegisterData {
-  email: string;
-  password: string;
-  full_name: string;
-}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -92,38 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const register = async (data: RegisterData) => {
-    try {
-      // Strictly send only requested fields
-      const payload = {
-        full_name: data.full_name,
-        email: data.email,
-        password: data.password
-      };
-
-      const response = await apiClient.post('/auth/register', payload);
-      let { user, token, refreshToken } = response.data.data || response.data; // Handle both structures
-
-      // Ensure names exist for UI
-      if (user && user.full_name && !user.firstName) {
-        const names = user.full_name.trim().split(/\s+/);
-        user.firstName = names[0] || 'User';
-        user.lastName = names.slice(1).join(' ') || '';
-      }
-
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      localStorage.setItem('user', JSON.stringify(user));
-      setUser(user);
-    } catch (error: any) {
-      console.error('Registration error details:', error.response?.data);
-      const message = error.response?.data?.message || error.response?.data?.errors?.[0]?.message || 'Registration failed';
-      throw new Error(message);
-    }
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, register }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

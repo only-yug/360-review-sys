@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://52.66.87.194:5000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -34,7 +34,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refreshToken');
         if (refreshToken) {
-          const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+          const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://52.66.87.194:5000/api/v1';
           const response = await axios.post(
             `${baseURL}/auth/refresh`,
             { refreshToken }
@@ -51,7 +51,8 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        // Don't do a hard redirect here — let page-level auth guards 
+        // handle the redirect via Next.js router to avoid redirect chains
         return Promise.reject(refreshError);
       }
     }

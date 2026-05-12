@@ -1,6 +1,10 @@
+'use client';
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Activity, Calendar as CalendarIcon, Check, HelpCircle, ChevronDown, User } from 'lucide-react';
+import { CustomSelect } from '@/components/ui/custom-select';
+import { ValidatedTextarea } from '@/components/ui/validated-textarea';
 
 interface ReviewSystemProps {
     // State
@@ -79,21 +83,20 @@ export default function ReviewSystem({
                         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
                             <div>
                                 <h2 className="text-3xl font-black tracking-tight mb-1 uppercase">Review Cycles</h2>
-                                <p className="text-muted-foreground text-xs font-bold tracking-wide">Select an active cycle to begin evaluations</p>
+                                {/*<p className="text-muted-foreground text-xs font-bold tracking-wide">Select an active cycle to begin evaluations</p>*/}
                             </div>
                             {onCycleFilterChange && cycleFilter && (
-                                <div className="relative w-full sm:w-auto">
-                                    <select
-                                        value={cycleFilter}
-                                        onChange={(e) => onCycleFilterChange(e.target.value)}
-                                        className="w-full sm:w-auto appearance-none bg-white/5 border border-white/10 rounded-xl px-4 py-3 sm:py-2 pr-10 text-xs font-bold uppercase tracking-widest focus:outline-none focus:border-primary/50 transition-all cursor-pointer min-w-[140px]"
-                                    >
-                                        <option value="Active" className="bg-zinc-900 text-white">Active</option>
-                                        <option value="Pending" className="bg-zinc-900 text-white">Pending</option>
-                                        <option value="Closed" className="bg-zinc-900 text-white">Closed</option>
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                                </div>
+                                <CustomSelect
+                                    value={cycleFilter}
+                                    onChange={onCycleFilterChange}
+                                    options={[
+                                        { value: 'Active', label: 'Active' },
+                                        { value: 'Pending', label: 'Pending' },
+                                        { value: 'Closed', label: 'Closed' }
+                                    ]}
+                                    className="w-full md:w-56"
+                                    selectClassName="h-10 rounded-xl bg-primary/5 border-primary/10"
+                                />
                             )}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -104,32 +107,32 @@ export default function ReviewSystem({
                                 </div>
                             ) : (
                                 (cycleFilter ? cycles.filter((c: any) => c.status === cycleFilter) : cycles).map((c: any) => (
-                                    <div key={c._id || c.id} className="p-8 rounded-[2rem] bg-white/5 border border-white/5 hover:border-primary/20 transition-all shadow-xl group relative">
-                                        <div className="flex justify-between items-start gap-4 mb-6">
-                                            <div className="flex items-center gap-4 min-w-0">
-                                                <div className="w-14 h-14 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-center text-primary shadow-xl shadow-primary/10 group-hover:rotate-6 transition-transform shrink-0">
-                                                    <CalendarIcon size={28} />
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <h3 className="text-xl font-black tracking-tighter leading-tight break-words">{c.name}</h3>
-                                                    <div className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">
-                                                        {new Date(c.start_date || c.startDate).toLocaleDateString()} - {new Date(c.end_date || c.endDate).toLocaleDateString()}
-                                                    </div>
+                                    <div key={c._id || c.id} className="p-5 sm:p-8 rounded-[2rem] bg-white/5 border border-white/5 hover:border-primary/20 transition-all shadow-xl group relative">
+                                        <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-4 mb-6 items-start">
+                                            <div className="order-1 w-14 h-14 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-center text-primary shadow-xl shadow-primary/10 group-hover:rotate-6 transition-transform shrink-0">
+                                                <CalendarIcon size={28} />
+                                            </div>
+                                            <div className="order-3 sm:order-2 col-span-2 sm:col-span-1 min-w-0 mt-2 sm:mt-0">
+                                                <h3 className="text-xl font-black tracking-tighter leading-tight break-words">{c.name}</h3>
+                                                <div className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1">
+                                                    {new Date(c.start_date || c.startDate).toLocaleDateString()} - {new Date(c.end_date || c.endDate).toLocaleDateString()}
                                                 </div>
                                             </div>
-                                            <div className={`shrink-0 inline-flex px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${c.status === 'Active'
-                                                ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                                                : c.status === 'Closed'
-                                                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                                                    : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                                            }`}>
-                                                {c.status}
+                                            <div className="order-2 sm:order-3 justify-self-end">
+                                                <div className={`inline-flex px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${c.status === 'Active'
+                                                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                                                    : c.status === 'Closed'
+                                                        ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                                                        : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                                }`}>
+                                                    {c.status}
+                                                </div>
                                             </div>
                                         </div>
                                         <button
                                             disabled={c.status !== 'Active'}
                                             onClick={() => onSelectCycle(c)}
-                                            className={`w-full h-12 rounded-xl font-black flex items-center justify-center gap-2 text-[9px] uppercase tracking-widest transition-all ${c.status === 'Active'
+                                            className={`w-full h-12 rounded-xl font-black flex items-center justify-center gap-2 text-xs uppercase tracking-widest transition-all ${c.status === 'Active'
                                                 ? 'bg-primary text-white shadow-lg shadow-primary/20 hover:shadow-primary/50 active:scale-95'
                                                 : 'bg-white/5 text-muted-foreground opacity-50 cursor-not-allowed border border-white/5'
                                             }`}
@@ -148,8 +151,8 @@ export default function ReviewSystem({
                         <div className="flex items-center gap-4 mb-8">
                             <button onClick={() => onSetReviewView('cycles')} className="p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all"><ChevronRight className="rotate-180" size={20} /></button>
                             <div>
-                                <h2 className="text-3xl font-black tracking-tight mb-1 uppercase">Target Personnel</h2>
-                                <p className="text-muted-foreground text-xs font-bold tracking-wide">Evaluations for: <span className="text-primary">{selectedCycle.name}</span></p>
+                                <h2 className="text-3xl font-black tracking-tight mb-1 uppercase">User Review List</h2>
+                                <p className="text-muted-foreground text-sm font-bold tracking-wide">Evaluations for: <span className="text-primary">{selectedCycle.name}</span></p>
                             </div>
                         </div>
                         {/* Desktop Table View */}
@@ -157,9 +160,9 @@ export default function ReviewSystem({
                             <table className="w-full">
                                 <thead>
                                 <tr className="border-b border-white/5 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                    <th className="text-xs pb-3 text-left pl-2">Subject Node</th>
-                                    <th className="text-xs pb-3 text-left">Internal Role</th>
-                                    <th className="text-xs pb-3 text-left">Internal Status</th>
+                                    <th className="text-xs pb-3 text-left pl-2">User Name</th>
+                                    <th className="text-xs pb-3 text-left">Role</th>
+                                    <th className="text-xs pb-3 text-left">Status</th>
                                     <th className="text-xs pb-3 text-right pr-2">Action</th>
                                 </tr>
                                 </thead>
@@ -331,7 +334,7 @@ export default function ReviewSystem({
                                             <div className="space-y-2">
                                                 <div className="flex items-center gap-3">
                                                     <span className="px-3 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest">
-                                                        Vector {currentSkillIdx + 1}/{skills.length}
+                                                        Skill {currentSkillIdx + 1}/{skills.length}
                                                     </span>
                                                     {skills[currentSkillIdx].category && (
                                                         <span className="px-3 py-1 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[10px] font-black uppercase tracking-widest">
@@ -353,7 +356,7 @@ export default function ReviewSystem({
                                                         : 'bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-white/10'
                                                     }`}
                                                 >
-                                                    {isVectorSkipped() ? 'Undo Skip' : 'Skip Vector'}
+                                                    {isVectorSkipped() ? 'Undo Skip' : 'Skip Skill'}
                                                 </button>
                                             )}
                                         </div>
@@ -371,9 +374,9 @@ export default function ReviewSystem({
                                                         <p className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-relaxed max-w-3xl">
                                                             {q.text}
                                                         </p>
-                                                        <div className="w-8 h-8 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center text-xs font-black text-gray-400">
-                                                            ?
-                                                        </div>
+                                                        {/*<div className="w-8 h-8 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center text-xs font-black text-gray-400">*/}
+                                                        {/*    ?*/}
+                                                        {/*</div>*/}
                                                     </div>
 
                                                     <div className="pt-4 border-t border-gray-100 dark:border-white/5">
@@ -414,14 +417,14 @@ export default function ReviewSystem({
                                         ))}
                                     </div>
 
-                                    {/* Comment Box */}
                                     <div className="bg-white/50 dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-[2rem] p-6 mt-6 backdrop-blur-sm">
-                                        <h3 className="text-sm font-black uppercase tracking-widest mb-4 text-primary">Vector Feedback</h3>
-                                        <textarea
-                                            className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl p-4 min-h-[100px] outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-muted-foreground"
-                                            placeholder={`Optional feedback for ${skills[currentSkillIdx].name}...`}
+                                        <ValidatedTextarea
+                                            label="Skill Feedback"
+                                            placeholder={`Feedback description for ${skills[currentSkillIdx].name}...`}
                                             value={assessmentComments[skills[currentSkillIdx].id || skills[currentSkillIdx]._id] || ''}
                                             onChange={(e) => onCommentChange(skills[currentSkillIdx].id || skills[currentSkillIdx]._id, e.target.value)}
+                                            className="min-h-[120px] bg-white dark:bg-black/20"
+                                            spellCheck={false}
                                         />
                                     </div>
 
@@ -444,7 +447,7 @@ export default function ReviewSystem({
                                                 onClick={() => onSubmit(false)}
                                                 className="w-full sm:w-auto px-8 h-14 rounded-2xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 font-bold text-gray-700 dark:text-white text-xs uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center justify-center gap-2"
                                             >
-                                                <CalendarIcon size={16} /> Save Draft
+                                                <CalendarIcon size={16} /> Save
                                             </button>
                                         </div>
 
@@ -453,14 +456,14 @@ export default function ReviewSystem({
                                                 onClick={() => onNextVector && onNextVector()}
                                                 className="w-full sm:w-auto px-10 h-14 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-black font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-3"
                                             >
-                                                Next Vector <ChevronRight size={16} />
+                                                Next Skill <ChevronRight size={16} />
                                             </button>
                                         ) : (
                                             <button
                                                 onClick={() => onSubmit(true)}
                                                 className="w-full sm:w-auto px-10 h-14 rounded-2xl bg-primary text-white font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/30 hover:shadow-primary/50 transition-all active:scale-95 flex items-center justify-center gap-3"
                                             >
-                                                <Check size={18} /> Submit Assessment
+                                                <Check size={18} /> Submit
                                             </button>
                                         )}
                                     </div>
@@ -484,12 +487,12 @@ export default function ReviewSystem({
                             <HelpCircle size={32} />
                         </div>
                         <h4 className="text-xl font-black tracking-tight text-gray-900 dark:text-white uppercase mb-3">
-                            {skipModalState.questionId === 'VECTOR_UNDO' ? 'Undo Skip Vector?' : 'Skip Entire Vector?'}
+                            {skipModalState.questionId === 'VECTOR_UNDO' ? 'Undo Skip Skill?' : 'Skip Entire Skill?'}
                         </h4>
                         <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
                             {skipModalState.questionId === 'VECTOR_UNDO'
                                 ? 'Are you sure you want to undo the skip? This will allow you to answer questions again.'
-                                : 'Are you sure you want to skip all questions in this skill/vector? This will mark all questions as skipped. You can undo this later.'}
+                                : 'Are you sure you want to skip all questions in this skill? This will mark all questions as skipped. You can undo this later.'}
                         </p>
                         <div className="flex gap-3">
                             <button
