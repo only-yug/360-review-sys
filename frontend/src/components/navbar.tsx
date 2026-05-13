@@ -3,17 +3,19 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { BarChart3, LogOut, User as UserIcon, Mail, Shield, ChevronDown, Activity } from 'lucide-react';
+import { BarChart3, LogOut, User as UserIcon, Mail, Shield, ChevronDown, Activity, Key } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
+import ChangePasswordModal from './dashboard/change-password-modal';
 
 export function Navbar() {
     const { user, logout } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Close dropdown on navigation or user change
@@ -38,6 +40,7 @@ export function Navbar() {
     }, []);
 
     return (
+        <>
         <nav className="fixed top-0 left-0 right-0 z-50 glass-card border-b border-gray-200 dark:border-white/10 h-20 transition-all duration-300">
             <div className="container mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
                 {/* Branding */}
@@ -117,6 +120,18 @@ export function Navbar() {
 
                                     <div className="p-2">
                                         <button
+                                            onClick={() => {
+                                                setIsProfileOpen(false);
+                                                setIsChangePasswordOpen(true);
+                                            }}
+                                            className="w-full flex items-center gap-3 p-3 rounded-xl bg-gray-100/50 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-all group font-bold mb-1"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-white/10 flex items-center justify-center group-hover:bg-gray-300 dark:group-hover:bg-white/20 transition-colors">
+                                                <Key size={18} />
+                                            </div>
+                                            <span>Change Password</span>
+                                        </button>
+                                        <button
                                             onClick={handleLogout}
                                             className="w-full flex items-center gap-3 p-3 rounded-xl bg-destructive/5 text-destructive hover:bg-destructive hover:text-white transition-all group font-bold"
                                         >
@@ -140,5 +155,11 @@ export function Navbar() {
                 </div>
             </div>
         </nav>
+        
+        <ChangePasswordModal 
+            isOpen={isChangePasswordOpen} 
+            onClose={() => setIsChangePasswordOpen(false)} 
+        />
+        </>
     );
 }
