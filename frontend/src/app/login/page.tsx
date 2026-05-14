@@ -97,7 +97,7 @@ export default function LoginPage() {
           <div className="space-y-1">
             <div className="flex justify-between items-center px-1 mb-1">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/70">Password</label>
-              <Link href="#" className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline">Forgot password?</Link>
+              <Link href="/forgot-password" className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline">Forgot password?</Link>
             </div>
             <ValidatedInput
               placeholder="•••••••"
