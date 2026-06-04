@@ -205,7 +205,7 @@ export default function ForgotPasswordPage() {
                           ? 'bg-destructive/10 border-destructive/50 text-destructive focus:border-destructive focus:ring-4 focus:ring-destructive/10' 
                           : isSuccess 
                             ? 'bg-green-500/10 border-green-500/50 text-green-500 focus:border-green-500 focus:ring-4 focus:ring-green-500/10'
-                            : 'bg-white/5 border-white/10 text-foreground focus:border-primary focus:ring-4 focus:ring-primary/20 hover:bg-white/10'
+                              : 'bg-muted/50 border-border text-foreground focus:border-primary focus:ring-4 focus:ring-primary/20 hover:bg-muted'
                         }
                       `}
                     />
